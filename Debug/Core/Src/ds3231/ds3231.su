@@ -1,0 +1,10 @@
+../Core/Src/ds3231/ds3231.c:19:6:DS3231_Init	16	static
+../Core/Src/ds3231/ds3231.c:24:6:DS3231_GetTime	32	static
+../Core/Src/ds3231/ds3231.c:43:6:DS3231_SetTime	40	static
+../Core/Src/ds3231/ds3231.c:52:6:DS3231_ReadTemperature	32	static
+../Core/Src/ds3231/ds3231.c:67:6:DS3231_SetAlarm1	48	static
+../Core/Src/ds3231/ds3231.c:115:6:DS3231_ClearAlarm1	16	static
+../Core/Src/ds3231/ds3231.c:133:6:ReadRegister	24	static
+../Core/Src/ds3231/ds3231.c:141:6:WriteRegister	32	static
+../Core/Src/ds3231/ds3231.c:149:16:B2D	16	static
+../Core/Src/ds3231/ds3231.c:154:16:D2B	16	static
