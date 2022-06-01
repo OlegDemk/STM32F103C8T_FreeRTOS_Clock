@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -53,6 +54,55 @@ uint8_t Data[256];
 
 SPI_HandleTypeDef hspi1;
 
+/* Definitions for defaultTask */
+osThreadId_t defaultTaskHandle;
+const osThreadAttr_t defaultTask_attributes = {
+  .name = "defaultTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for RTC_DS3231_Task */
+osThreadId_t RTC_DS3231_TaskHandle;
+const osThreadAttr_t RTC_DS3231_Task_attributes = {
+  .name = "RTC_DS3231_Task",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for BPE280_Task */
+osThreadId_t BPE280_TaskHandle;
+const osThreadAttr_t BPE280_Task_attributes = {
+  .name = "BPE280_Task",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for MAIN_TASK */
+osThreadId_t MAIN_TASKHandle;
+const osThreadAttr_t MAIN_TASK_attributes = {
+  .name = "MAIN_TASK",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for UART_USB_Task */
+osThreadId_t UART_USB_TaskHandle;
+const osThreadAttr_t UART_USB_Task_attributes = {
+  .name = "UART_USB_Task",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for Buttons_Task */
+osThreadId_t Buttons_TaskHandle;
+const osThreadAttr_t Buttons_Task_attributes = {
+  .name = "Buttons_Task",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for LCD_Task */
+osThreadId_t LCD_TaskHandle;
+const osThreadAttr_t LCD_Task_attributes = {
+  .name = "LCD_Task",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -62,6 +112,14 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
+void StartDefaultTask(void *argument);
+void start_RTC_DS3231_Task(void *argument);
+void start_BPE280_Task(void *argument);
+void start_MAIN_TASK(void *argument);
+void start_UART_USB_Task(void *argument);
+void start_Buttons_Task(void *argument);
+void start_LCD_Task(void *argument);
+
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -124,31 +182,64 @@ int main(void)
   bool bme280p = bmp280.id == BME280_CHIP_ID;
   /* USER CODE END 2 */
 
+  /* Init scheduler */
+  osKernelInitialize();
 
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* creation of defaultTask */
+  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+
+  /* creation of RTC_DS3231_Task */
+  RTC_DS3231_TaskHandle = osThreadNew(start_RTC_DS3231_Task, NULL, &RTC_DS3231_Task_attributes);
+
+  /* creation of BPE280_Task */
+  BPE280_TaskHandle = osThreadNew(start_BPE280_Task, NULL, &BPE280_Task_attributes);
+
+  /* creation of MAIN_TASK */
+  MAIN_TASKHandle = osThreadNew(start_MAIN_TASK, NULL, &MAIN_TASK_attributes);
+
+  /* creation of UART_USB_Task */
+  UART_USB_TaskHandle = osThreadNew(start_UART_USB_Task, NULL, &UART_USB_Task_attributes);
+
+  /* creation of Buttons_Task */
+  Buttons_TaskHandle = osThreadNew(start_Buttons_Task, NULL, &Buttons_Task_attributes);
+
+  /* creation of LCD_Task */
+  LCD_TaskHandle = osThreadNew(start_LCD_Task, NULL, &LCD_Task_attributes);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  // Test of LCD
-	  ILI9341_Fill_Screen(BLUE);
-	  HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-	  HAL_Delay(500);
-	  ILI9341_Fill_Screen(YELLOW);
-	  HAL_Delay(500);
 
-	  // Test Clock dc3231
-	  _RTC time;
-	  DS3231_GetTime(&time);
-
-	  // Test BME280
-	  if((bmp280_read_float(&bmp280, &temperature, &pressure, &humidity)) != true)
-	  {
-		  // Error
-		  while(1){}
-	  }
-
-
-	  int ggg = 99;
 
 
     /* USER CODE END WHILE */
@@ -319,6 +410,171 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
+
+/* USER CODE BEGIN Header_StartDefaultTask */
+/**
+  * @brief  Function implementing the defaultTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+  for(;;)
+  {
+	  ILI9341_Fill_Screen(BLUE);
+	 	  HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+	 	 osDelay(500);
+	 	  ILI9341_Fill_Screen(YELLOW);
+	 	 osDelay(500);
+
+	 	  // Test Clock dc3231
+	 	  _RTC time;
+	 	  DS3231_GetTime(&time);
+
+	 	  // Test BME280
+	 	  if((bmp280_read_float(&bmp280, &temperature, &pressure, &humidity)) != true)
+	 	  {
+	 		  // Error
+	 		  while(1){}
+	 	  }
+
+
+   // osDelay(1000);
+  }
+  /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_start_RTC_DS3231_Task */
+/**
+* @brief Function implementing the RTC_DS3231_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_start_RTC_DS3231_Task */
+void start_RTC_DS3231_Task(void *argument)
+{
+  /* USER CODE BEGIN start_RTC_DS3231_Task */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END start_RTC_DS3231_Task */
+}
+
+/* USER CODE BEGIN Header_start_BPE280_Task */
+/**
+* @brief Function implementing the BPE280_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_start_BPE280_Task */
+void start_BPE280_Task(void *argument)
+{
+  /* USER CODE BEGIN start_BPE280_Task */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END start_BPE280_Task */
+}
+
+/* USER CODE BEGIN Header_start_MAIN_TASK */
+/**
+* @brief Function implementing the MAIN_TASK thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_start_MAIN_TASK */
+void start_MAIN_TASK(void *argument)
+{
+  /* USER CODE BEGIN start_MAIN_TASK */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END start_MAIN_TASK */
+}
+
+/* USER CODE BEGIN Header_start_UART_USB_Task */
+/**
+* @brief Function implementing the UART_USB_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_start_UART_USB_Task */
+void start_UART_USB_Task(void *argument)
+{
+  /* USER CODE BEGIN start_UART_USB_Task */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END start_UART_USB_Task */
+}
+
+/* USER CODE BEGIN Header_start_Buttons_Task */
+/**
+* @brief Function implementing the Buttons_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_start_Buttons_Task */
+void start_Buttons_Task(void *argument)
+{
+  /* USER CODE BEGIN start_Buttons_Task */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END start_Buttons_Task */
+}
+
+/* USER CODE BEGIN Header_start_LCD_Task */
+/**
+* @brief Function implementing the LCD_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_start_LCD_Task */
+void start_LCD_Task(void *argument)
+{
+  /* USER CODE BEGIN start_LCD_Task */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END start_LCD_Task */
+}
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM4 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM4) {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
