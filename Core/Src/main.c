@@ -29,13 +29,29 @@
 
 #include "bme280/bme280.h"
 
-BMP280_HandleTypedef bmp280;
-float pressure, temperature, humidity;
-uint16_t size;
-uint8_t Data[256];
+#include "task.h"
+
+#include "stdlib.h"
+
+/////// For task management
+volatile unsigned long ulHighFreqebcyTimerTicks;		// This variable using for calculate how many time all tasks was running.
+char str_management_memory_str[1000] = {0};
+int freemem = 0;
+uint32_t tim_val = 0;
+
+typedef struct 							// Queue for UARD
+{
+	char Buf[1024];
+}QUEUE_t;
+////////////////////////////
+//BMP280_HandleTypedef bmp280;
+//float pressure, temperature, humidity;
+//uint16_t size;
+//uint8_t Data[256];
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
+typedef StaticQueue_t osStaticMessageQDef_t;
 /* USER CODE BEGIN PTD */
 
 /* USER CODE END PTD */
@@ -53,6 +69,11 @@ uint8_t Data[256];
  I2C_HandleTypeDef hi2c1;
 
 SPI_HandleTypeDef hspi1;
+
+TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
+
+UART_HandleTypeDef huart1;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -86,7 +107,7 @@ const osThreadAttr_t MAIN_TASK_attributes = {
 osThreadId_t UART_USB_TaskHandle;
 const osThreadAttr_t UART_USB_Task_attributes = {
   .name = "UART_USB_Task",
-  .stack_size = 128 * 4,
+  .stack_size = 500 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for Buttons_Task */
@@ -103,7 +124,42 @@ const osThreadAttr_t LCD_Task_attributes = {
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for UARTQueue */
+osMessageQueueId_t UARTQueueHandle;
+uint8_t UARTQueueBuffer[ 2 * sizeof( QUEUE_t ) ];
+osStaticMessageQDef_t UARTQueueControlBlock;
+const osMessageQueueAttr_t UARTQueue_attributes = {
+  .name = "UARTQueue",
+  .cb_mem = &UARTQueueControlBlock,
+  .cb_size = sizeof(UARTQueueControlBlock),
+  .mq_mem = &UARTQueueBuffer,
+  .mq_size = sizeof(UARTQueueBuffer)
+};
 /* USER CODE BEGIN PV */
+
+
+// -------------------------------------------------------------------------
+HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	if((GPIO_Pin == KEY_1_Pin) || (GPIO_Pin == KEY_2_Pin) || (GPIO_Pin == KEY_3_Pin) || (GPIO_Pin == KEY_4_Pin))
+	{
+
+		//HAL_TIM_Base_Start_IT(&htim3);
+
+
+
+//		HAL_TIM_Base_Start(&htim1);
+		//osTimerStart (button_timerHandle, 1000);
+
+		//xTaskNotify(Buttons_TaskHandle, 0, eNoAction);
+
+		// Make delay
+
+//		xTaskNotifyFromISR(Buttons_TaskHandle, 0, eNoAction, 0);
+	}
+}
+// -------------------------------------------------------------------------
+
 
 /* USER CODE END PV */
 
@@ -112,6 +168,9 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM1_Init(void);
+static void MX_USART1_UART_Init(void);
+static void MX_TIM2_Init(void);
 void StartDefaultTask(void *argument);
 void start_RTC_DS3231_Task(void *argument);
 void start_BPE280_Task(void *argument);
@@ -159,6 +218,9 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI1_Init();
   MX_I2C1_Init();
+  MX_TIM1_Init();
+  MX_USART1_UART_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
   // Init LCD
@@ -170,16 +232,22 @@ int main(void)
   // DC3231 init
   DS3231_Init(&hi2c1);
 
-  // Init BME280
-  bmp280_init_default_params(&bmp280.params);
-  bmp280.addr = BMP280_I2C_ADDRESS_0;
-  bmp280.i2c = &hi2c1;
-  if(bmp280_init(&bmp280, &bmp280.params) != true)
-  {
-	  // error
-	  while(1){}
-  }
-  bool bme280p = bmp280.id == BME280_CHIP_ID;
+//  // Init BME280
+//  bmp280_init_default_params(&bmp280.params);
+//  bmp280.addr = BMP280_I2C_ADDRESS_0;
+//  bmp280.i2c = &hi2c1;
+//  if(bmp280_init(&bmp280, &bmp280.params) != true)
+//  {
+//	  // error
+//	  while(1){}
+//  }
+//  bool bme280p = bmp280.id == BME280_CHIP_ID;
+
+
+
+
+//  HAL_TIM_Base_Start_IT(&htim1);
+
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -196,6 +264,10 @@ int main(void)
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
+
+  /* Create the queue(s) */
+  /* creation of UARTQueue */
+  UARTQueueHandle = osMessageQueueNew (2, sizeof(QUEUE_t), &UARTQueue_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -224,7 +296,8 @@ int main(void)
   LCD_TaskHandle = osThreadNew(start_LCD_Task, NULL, &LCD_Task_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  /* add threads, ... */
+
+  HAL_TIM_Base_Start_IT(&htim2);		//  This TIM3 using for calculate how many time all tasks was running.
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -361,6 +434,130 @@ static void MX_SPI1_Init(void)
 }
 
 /**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 7199;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 10000;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 720;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 10;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -376,7 +573,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LCD_CS_GPIO_Port, LCD_CS_Pin, GPIO_PIN_RESET);
@@ -391,6 +588,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : KEY_4_Pin KEY_3_Pin KEY_2_Pin KEY_1_Pin */
+  GPIO_InitStruct.Pin = KEY_4_Pin|KEY_3_Pin|KEY_2_Pin|KEY_1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /*Configure GPIO pin : LCD_CS_Pin */
   GPIO_InitStruct.Pin = LCD_CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -404,6 +607,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI1_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI2_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI2_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI3_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI3_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI4_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
 
 }
 
@@ -424,8 +640,8 @@ void StartDefaultTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  ILI9341_Fill_Screen(BLUE);
-	 	  HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+	 ILI9341_Fill_Screen(BLUE);
+//	 HAL_GPIO_TogglePin(GPIOC, LED_Pin);
 	 	 osDelay(500);
 	 	  ILI9341_Fill_Screen(YELLOW);
 	 	 osDelay(500);
@@ -434,12 +650,7 @@ void StartDefaultTask(void *argument)
 	 	  _RTC time;
 	 	  DS3231_GetTime(&time);
 
-	 	  // Test BME280
-	 	  if((bmp280_read_float(&bmp280, &temperature, &pressure, &humidity)) != true)
-	 	  {
-	 		  // Error
-	 		  while(1){}
-	 	  }
+
 
 
    // osDelay(1000);
@@ -476,10 +687,31 @@ void start_BPE280_Task(void *argument)
 {
   /* USER CODE BEGIN start_BPE280_Task */
   /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+	BMP280_HandleTypedef bmp280;
+	float pressure, temperature, humidity;
+
+	// Init BME280
+	bmp280_init_default_params(&bmp280.params);
+	bmp280.addr = BMP280_I2C_ADDRESS_0;
+	bmp280.i2c = &hi2c1;
+	if(bmp280_init(&bmp280, &bmp280.params) != true)
+	{
+		while(1){}   			// ERROR
+	}
+	bool bme280p = bmp280.id == BME280_CHIP_ID;
+
+	for(;;)
+	{
+		if((bmp280_read_float(&bmp280, &temperature, &pressure, &humidity)) != true)
+		{
+			while(1) {}			// ERROR
+		}
+		else
+		{
+			// Send data into QUEU to the main task <<<<<<<<<<<<<<<<<<<<<<<<<<
+		}
+		osDelay(2000);
+	}
   /* USER CODE END start_BPE280_Task */
 }
 
@@ -514,7 +746,66 @@ void start_UART_USB_Task(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	  char str_end_of_line[3] = {'\r','\n'};
+	  char str_sig = '-';
+	  char buff[10] = {0};
+
+	  QUEUE_t msg;												// Make a queue
+	  memset(msg.Buf, 0, sizeof(msg.Buf));						// Fill in buff '\0'
+	  strcat(msg.Buf, ">>>>> Free heap memory: ");				// Add string to another (Total heap)
+
+	  freemem = xPortGetFreeHeapSize();							// Function return how many free memory.
+	  itoa(freemem, buff, 10);
+	  strcat(msg.Buf, buff);
+	  strcat(msg.Buf, str_end_of_line);
+
+	  // add a hat
+	  strcat(msg.Buf, "| TASK NAME  | STATUS | PRIOR | STACK | NUM |\n\r\0");
+
+	  vTaskList(str_management_memory_str);						// Fill in str_management_memory_str array management task information
+
+	  // Finding the  end of string
+	  uint16_t buffer_size = 0;
+	  while(msg.Buf[buffer_size] != '\0')
+	  {
+		  buffer_size ++;
+	  }
+
+	  // Add str_management_memory_str to queue string
+	  int i = 0;
+	  for(i = 0; str_management_memory_str[i] != '\0'; i++)
+	  {
+		  // add data to queue
+		  msg.Buf[buffer_size + i] = str_management_memory_str[i];
+	  }
+
+	  // add a hat
+	  char str_line[] = {"-----------------------\n\r"};
+	  char str_head_2[] = {"| TASK NAME | ABS TIME | TASK TIME% |\n\r"};
+	  strcat(msg.Buf, str_line);
+	  strcat(msg.Buf, str_head_2);
+
+	  memset(str_management_memory_str, 0, sizeof(str_management_memory_str));	// Clean buffer
+
+	  vTaskGetRunTimeStats(str_management_memory_str);							// Function return how much time all functions running.
+
+	  buffer_size = buffer_size + i + (sizeof(str_line)-1) + (sizeof(str_head_2)-1);
+	  for(i = 0; str_management_memory_str[i] != '\0'; i++)
+	  {
+		  // add data to queue
+		  msg.Buf[buffer_size + i] = str_management_memory_str[i];
+	  }
+	  strcat(msg.Buf, "#########################################\n\r");
+
+	  buffer_size = 0;
+	  while(msg.Buf[buffer_size] != '\0')
+	  {
+		  buffer_size ++;
+	  }
+	  // Transmit over virtual comport
+	  HAL_UART_Transmit_IT( &huart1, msg.Buf, buffer_size);
+
+	  osDelay(3000);
   }
   /* USER CODE END start_UART_USB_Task */
 }
@@ -530,8 +821,11 @@ void start_Buttons_Task(void *argument)
 {
   /* USER CODE BEGIN start_Buttons_Task */
   /* Infinite loop */
+
+	BaseType_t status;
   for(;;)
   {
+
     osDelay(1);
   }
   /* USER CODE END start_Buttons_Task */
@@ -566,6 +860,11 @@ void start_LCD_Task(void *argument)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
+
+	if(htim->Instance == TIM2)
+	{
+		ulHighFreqebcyTimerTicks++;					// Update time tasks counter
+	}
 
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM4) {
