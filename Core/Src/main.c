@@ -49,12 +49,12 @@ typedef struct 							// Queue for UARD
 //float pressure, temperature, humidity;
 //uint16_t size;
 //uint8_t Data[256];
-//typedef struct
-//{
-//	float pressure;
-//	float temperature;
-//	float humidity;
-//}QUEUE_BME280;
+typedef struct
+{
+	float pressure;
+	float temperature;
+	float humidity;
+}QUEUE_BME280;
 
 
 // For button debounce
@@ -145,16 +145,16 @@ osMessageQueueId_t buttonQueueHandle;
 const osMessageQueueAttr_t buttonQueue_attributes = {
   .name = "buttonQueue"
 };
-/* Definitions for bme280ueue */
-osMessageQueueId_t bme280ueueHandle;
-uint8_t bme280ueueBuffer[ 2 * sizeof( float ) ];
-osStaticMessageQDef_t bme280ueueControlBlock;
-const osMessageQueueAttr_t bme280ueue_attributes = {
-  .name = "bme280ueue",
-  .cb_mem = &bme280ueueControlBlock,
-  .cb_size = sizeof(bme280ueueControlBlock),
-  .mq_mem = &bme280ueueBuffer,
-  .mq_size = sizeof(bme280ueueBuffer)
+/* Definitions for THPQueue */
+osMessageQueueId_t THPQueueHandle;
+uint8_t THPQueueBuffer[ 3 * sizeof( QUEUE_BME280 ) ];
+osStaticMessageQDef_t THPQueueControlBlock;
+const osMessageQueueAttr_t THPQueue_attributes = {
+  .name = "THPQueue",
+  .cb_mem = &THPQueueControlBlock,
+  .cb_size = sizeof(THPQueueControlBlock),
+  .mq_mem = &THPQueueBuffer,
+  .mq_size = sizeof(THPQueueBuffer)
 };
 /* USER CODE BEGIN PV */
 
@@ -316,8 +316,8 @@ int main(void)
   /* creation of buttonQueue */
   buttonQueueHandle = osMessageQueueNew (5, sizeof(uint16_t), &buttonQueue_attributes);
 
-  /* creation of bme280ueue */
-  bme280ueueHandle = osMessageQueueNew (2, sizeof(float), &bme280ueue_attributes);
+  /* creation of THPQueue */
+  THPQueueHandle = osMessageQueueNew (3, sizeof(QUEUE_BME280), &THPQueue_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -689,6 +689,8 @@ void start_BPE280_Task(void *argument)
   /* USER CODE BEGIN start_BPE280_Task */
   /* Infinite loop */
 	//QUEUE_BME280 QUEUE_BME280_t;
+
+	QUEUE_BME280 QUEUE_BME280_t;
 	BMP280_HandleTypedef bmp280;
 	float pressure, temperature, humidity;
 
@@ -696,32 +698,32 @@ void start_BPE280_Task(void *argument)
 	bmp280_init_default_params(&bmp280.params);
 	bmp280.addr = BMP280_I2C_ADDRESS_0;
 	bmp280.i2c = &hi2c1;
+
 	if(bmp280_init(&bmp280, &bmp280.params) != true)
 	{
-		while(1){}   			// ERROR
+		while(1){}   								// ERROR
 	}
+
 	bool bme280p = bmp280.id == BME280_CHIP_ID;
 
 	for(;;)
 	{
 		if((bmp280_read_float(&bmp280, &temperature, &pressure, &humidity)) != true)
 		{
-			while(1) {}			// ERROR
+			while(1){}								// ERROR
 		}
-		else
+		else										// IF all okay. Send data into QUEU to the main task
 		{
-			// Send data into QUEU to the main task <<<<<<<<<<<<<<<<<<<<<<<<<<
-//			QUEUE_BME280_t.temperature = temperature;
-//			QUEUE_BME280_t.humidity = humidity;
-//			QUEUE_BME280_t.pressure = pressure;
+			// Fill in fields of struct
+			QUEUE_BME280_t.temperature = temperature;
+			QUEUE_BME280_t.humidity = humidity;
+			QUEUE_BME280_t.pressure = pressure;
 
-			int status_queue = xQueueSend( bme280ueueHandle, &temperature, 0);
+			int status_queue = xQueueSend(THPQueueHandle, &QUEUE_BME280_t, 0);		// Send data into queue
 			if(status_queue != pdPASS)
 			{
-				int ggg = 999; // ERROR
+				// ERROR
 			}
-
-			//xQueueGenericSend(QUEUE_BME280, &QUEUE_BME280_t.temperature, 0);
 		}
 		osDelay(2000);
 	}
@@ -741,47 +743,42 @@ void start_MAIN_TASK(void *argument)
   /* Infinite loop */
 	//QUEUE_BME280 QUEUE_BME280_t;
 
-  for(;;)
-  {
+	QUEUE_BME280 QUEUE_BME280_t;
 
-
-	  // Waiting press the any button
-	  uint16_t pressed_key, status_queue = 0;
-	  status_queue = xQueueReceive( buttonQueueHandle , &pressed_key, 0 );
-	  if (status_queue == pdTRUE)
-	  {
-		  // Set oclock mode
-		  if(pressed_key == 1)
-		  {
-			  HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-		  }
-		  else if(pressed_key == 2)
-		  {
-
-			  HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-		  }
-		  else if(pressed_key == 3)
-		  {
-			  HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-		  }
-		  else if(pressed_key == 4)
-		  {
-			  HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-		  }
-		  //HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-	  }
-	  else	// Show time, date, temperature, humidity and pressure
-	  {
-		  // 1. Show T, H and P Internal sensor
-		  float temperature = 0;
-		  status_queue = xQueueReceive(bme280ueueHandle, &temperature, 0);
-		  if(status_queue == pdTRUE)
-		  {
-			  // Shpow T, H and P <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-
-			  int fff = 888;
-			  fff++;
-		  }
+	for(;;)
+	{
+		// Waiting press the any button
+		uint16_t pressed_key, status_queue = 0;
+		status_queue = xQueueReceive( buttonQueueHandle , &pressed_key, 0 );
+		if (status_queue == pdTRUE)
+		{
+			// Set oclock mode
+			if(pressed_key == 1)
+			{
+				HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			}
+			else if(pressed_key == 2)
+			{
+				HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			}
+			else if(pressed_key == 3)
+			{
+				HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			}
+			else if(pressed_key == 4)
+			{
+				HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			}
+			//HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+		}
+		else	// Show time, date, temperature, humidity and pressure
+		{
+			// 1. Get T, H and P Internal sensor
+			status_queue = xQueueReceive(THPQueueHandle, &QUEUE_BME280_t, 0);
+			if(status_queue == pdTRUE)
+			{
+				float test_val = QUEUE_BME280_t.temperature;			// For debug
+			}
 
 
 		  // 2. Show Time and Date
