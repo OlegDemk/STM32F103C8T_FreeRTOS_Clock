@@ -32,6 +32,7 @@
 #include "task.h"
 
 #include "stdlib.h"
+#include "queue.h"
 
 /////// For task management
 volatile unsigned long ulHighFreqebcyTimerTicks;		// This variable using for calculate how many time all tasks was running.
@@ -48,6 +49,18 @@ typedef struct 							// Queue for UARD
 //float pressure, temperature, humidity;
 //uint16_t size;
 //uint8_t Data[256];
+//typedef struct
+//{
+//	float pressure;
+//	float temperature;
+//	float humidity;
+//}QUEUE_BME280;
+
+
+// For button debounce
+uint32_t previousMillis = 0;
+uint32_t currentMillis = 0;
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -70,7 +83,6 @@ typedef StaticQueue_t osStaticMessageQDef_t;
 
 SPI_HandleTypeDef hspi1;
 
-TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart1;
@@ -110,13 +122,6 @@ const osThreadAttr_t UART_USB_Task_attributes = {
   .stack_size = 500 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for Buttons_Task */
-osThreadId_t Buttons_TaskHandle;
-const osThreadAttr_t Buttons_Task_attributes = {
-  .name = "Buttons_Task",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
 /* Definitions for LCD_Task */
 osThreadId_t LCD_TaskHandle;
 const osThreadAttr_t LCD_Task_attributes = {
@@ -135,6 +140,22 @@ const osMessageQueueAttr_t UARTQueue_attributes = {
   .mq_mem = &UARTQueueBuffer,
   .mq_size = sizeof(UARTQueueBuffer)
 };
+/* Definitions for buttonQueue */
+osMessageQueueId_t buttonQueueHandle;
+const osMessageQueueAttr_t buttonQueue_attributes = {
+  .name = "buttonQueue"
+};
+/* Definitions for bme280ueue */
+osMessageQueueId_t bme280ueueHandle;
+uint8_t bme280ueueBuffer[ 2 * sizeof( float ) ];
+osStaticMessageQDef_t bme280ueueControlBlock;
+const osMessageQueueAttr_t bme280ueue_attributes = {
+  .name = "bme280ueue",
+  .cb_mem = &bme280ueueControlBlock,
+  .cb_size = sizeof(bme280ueueControlBlock),
+  .mq_mem = &bme280ueueBuffer,
+  .mq_size = sizeof(bme280ueueBuffer)
+};
 /* USER CODE BEGIN PV */
 
 
@@ -143,19 +164,45 @@ HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	if((GPIO_Pin == KEY_1_Pin) || (GPIO_Pin == KEY_2_Pin) || (GPIO_Pin == KEY_3_Pin) || (GPIO_Pin == KEY_4_Pin))
 	{
+		BaseType_t xHigherPriorityTaskWoken;
+		uint16_t key_1 = 1;
+		uint16_t key_2 = 2;
+		uint16_t key_3 = 3;
+		uint16_t key_4 = 4;
 
-		//HAL_TIM_Base_Start_IT(&htim3);
-
-
-
-//		HAL_TIM_Base_Start(&htim1);
-		//osTimerStart (button_timerHandle, 1000);
-
-		//xTaskNotify(Buttons_TaskHandle, 0, eNoAction);
-
-		// Make delay
-
-//		xTaskNotifyFromISR(Buttons_TaskHandle, 0, eNoAction, 0);
+		currentMillis = HAL_GetTick();
+		if((currentMillis - previousMillis) > 100)
+		{
+			if(HAL_GPIO_ReadPin(GPIOA, KEY_1_Pin) == GPIO_PIN_SET)			// If first key was pressed
+			{
+				if((xQueueSendFromISR( buttonQueueHandle, &key_1, &xHigherPriorityTaskWoken )) != 1)		// Send queue to main task
+				{
+					// Error
+				}
+			}
+			else if(HAL_GPIO_ReadPin(GPIOA, KEY_2_Pin) == GPIO_PIN_SET)
+			{
+				if((xQueueSendFromISR( buttonQueueHandle, &key_2, &xHigherPriorityTaskWoken )) != 1)
+				{
+					// Error
+				}
+			}
+			else if(HAL_GPIO_ReadPin(GPIOA, KEY_3_Pin) == GPIO_PIN_SET)
+			{
+				if((xQueueSendFromISR( buttonQueueHandle, &key_2, &xHigherPriorityTaskWoken )) != 1)
+				{
+					// Error
+				}
+			}
+			else if(HAL_GPIO_ReadPin(GPIOA, KEY_4_Pin) == GPIO_PIN_SET)
+			{
+				if((xQueueSendFromISR( buttonQueueHandle, &key_4, &xHigherPriorityTaskWoken )) != 1)
+				{
+					// Error
+				}
+			}
+			previousMillis = currentMillis;
+		}
 	}
 }
 // -------------------------------------------------------------------------
@@ -168,7 +215,6 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
-static void MX_TIM1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
 void StartDefaultTask(void *argument);
@@ -176,7 +222,6 @@ void start_RTC_DS3231_Task(void *argument);
 void start_BPE280_Task(void *argument);
 void start_MAIN_TASK(void *argument);
 void start_UART_USB_Task(void *argument);
-void start_Buttons_Task(void *argument);
 void start_LCD_Task(void *argument);
 
 /* USER CODE BEGIN PFP */
@@ -218,7 +263,6 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI1_Init();
   MX_I2C1_Init();
-  MX_TIM1_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
@@ -269,6 +313,12 @@ int main(void)
   /* creation of UARTQueue */
   UARTQueueHandle = osMessageQueueNew (2, sizeof(QUEUE_t), &UARTQueue_attributes);
 
+  /* creation of buttonQueue */
+  buttonQueueHandle = osMessageQueueNew (5, sizeof(uint16_t), &buttonQueue_attributes);
+
+  /* creation of bme280ueue */
+  bme280ueueHandle = osMessageQueueNew (2, sizeof(float), &bme280ueue_attributes);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
@@ -289,15 +339,12 @@ int main(void)
   /* creation of UART_USB_Task */
   UART_USB_TaskHandle = osThreadNew(start_UART_USB_Task, NULL, &UART_USB_Task_attributes);
 
-  /* creation of Buttons_Task */
-  Buttons_TaskHandle = osThreadNew(start_Buttons_Task, NULL, &Buttons_Task_attributes);
-
   /* creation of LCD_Task */
   LCD_TaskHandle = osThreadNew(start_LCD_Task, NULL, &LCD_Task_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
 
-  HAL_TIM_Base_Start_IT(&htim2);		//  This TIM3 using for calculate how many time all tasks was running.
+  //HAL_TIM_Base_Start_IT(&htim2);		//  This TIM3 using for calculate how many time all tasks was running.
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -430,52 +477,6 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
 
   /* USER CODE END SPI1_Init 2 */
-
-}
-
-/**
-  * @brief TIM1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM1_Init(void)
-{
-
-  /* USER CODE BEGIN TIM1_Init 0 */
-
-  /* USER CODE END TIM1_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM1_Init 1 */
-
-  /* USER CODE END TIM1_Init 1 */
-  htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 7199;
-  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 10000;
-  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim1.Init.RepetitionCounter = 0;
-  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM1_Init 2 */
-
-  /* USER CODE END TIM1_Init 2 */
 
 }
 
@@ -687,6 +688,7 @@ void start_BPE280_Task(void *argument)
 {
   /* USER CODE BEGIN start_BPE280_Task */
   /* Infinite loop */
+	//QUEUE_BME280 QUEUE_BME280_t;
 	BMP280_HandleTypedef bmp280;
 	float pressure, temperature, humidity;
 
@@ -709,6 +711,17 @@ void start_BPE280_Task(void *argument)
 		else
 		{
 			// Send data into QUEU to the main task <<<<<<<<<<<<<<<<<<<<<<<<<<
+//			QUEUE_BME280_t.temperature = temperature;
+//			QUEUE_BME280_t.humidity = humidity;
+//			QUEUE_BME280_t.pressure = pressure;
+
+			int status_queue = xQueueSend( bme280ueueHandle, &temperature, 0);
+			if(status_queue != pdPASS)
+			{
+				int ggg = 999; // ERROR
+			}
+
+			//xQueueGenericSend(QUEUE_BME280, &QUEUE_BME280_t.temperature, 0);
 		}
 		osDelay(2000);
 	}
@@ -726,9 +739,65 @@ void start_MAIN_TASK(void *argument)
 {
   /* USER CODE BEGIN start_MAIN_TASK */
   /* Infinite loop */
+	//QUEUE_BME280 QUEUE_BME280_t;
+
   for(;;)
   {
-    osDelay(1);
+
+
+	  // Waiting press the any button
+	  uint16_t pressed_key, status_queue = 0;
+	  status_queue = xQueueReceive( buttonQueueHandle , &pressed_key, 0 );
+	  if (status_queue == pdTRUE)
+	  {
+		  // Set oclock mode
+		  if(pressed_key == 1)
+		  {
+			  HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+		  }
+		  else if(pressed_key == 2)
+		  {
+
+			  HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+		  }
+		  else if(pressed_key == 3)
+		  {
+			  HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+		  }
+		  else if(pressed_key == 4)
+		  {
+			  HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+		  }
+		  //HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+	  }
+	  else	// Show time, date, temperature, humidity and pressure
+	  {
+		  // 1. Show T, H and P Internal sensor
+		  float temperature = 0;
+		  status_queue = xQueueReceive(bme280ueueHandle, &temperature, 0);
+		  if(status_queue == pdTRUE)
+		  {
+			  // Shpow T, H and P <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+			  int fff = 888;
+			  fff++;
+		  }
+
+
+		  // 2. Show Time and Date
+
+
+		  // 3. Show T, H and P external sensor
+
+
+
+
+
+
+	  }
+
+
+   // osDelay(1);
   }
   /* USER CODE END start_MAIN_TASK */
 }
@@ -810,27 +879,6 @@ void start_UART_USB_Task(void *argument)
   /* USER CODE END start_UART_USB_Task */
 }
 
-/* USER CODE BEGIN Header_start_Buttons_Task */
-/**
-* @brief Function implementing the Buttons_Task thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_start_Buttons_Task */
-void start_Buttons_Task(void *argument)
-{
-  /* USER CODE BEGIN start_Buttons_Task */
-  /* Infinite loop */
-
-	BaseType_t status;
-  for(;;)
-  {
-
-    osDelay(1);
-  }
-  /* USER CODE END start_Buttons_Task */
-}
-
 /* USER CODE BEGIN Header_start_LCD_Task */
 /**
 * @brief Function implementing the LCD_Task thread.
@@ -861,6 +909,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
 
+	// Timer for measure how many time task was running.
 	if(htim->Instance == TIM2)
 	{
 		ulHighFreqebcyTimerTicks++;					// Update time tasks counter
