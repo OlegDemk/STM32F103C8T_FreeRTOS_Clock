@@ -1,8 +1,8 @@
 #MicroXplorer Configuration settings - do not modify
 FREERTOS.FootprintOK=true
 FREERTOS.IPParameters=Tasks01,FootprintOK,configUSE_NEWLIB_REENTRANT,configTOTAL_HEAP_SIZE,configTIMER_TASK_PRIORITY,configGENERATE_RUN_TIME_STATS,configUSE_STATS_FORMATTING_FUNCTIONS,Queues01
-FREERTOS.Queues01=UARTQueue,2,QUEUE_t,0,Static,UARTQueueBuffer,UARTQueueControlBlock;buttonQueue,5,uint16_t,0,Dynamic,NULL,NULL;THPQueue,3,QUEUE_BME280,0,Static,THPQueueBuffer,THPQueueControlBlock
-FREERTOS.Tasks01=defaultTask,24,256,StartDefaultTask,Default,NULL,Dynamic,NULL,NULL;RTC_DS3231_Task,24,256,start_RTC_DS3231_Task,Default,NULL,Dynamic,NULL,NULL;BPE280_Task,24,128,start_BPE280_Task,Default,NULL,Dynamic,NULL,NULL;MAIN_TASK,24,256,start_MAIN_TASK,Default,NULL,Dynamic,NULL,NULL;UART_USB_Task,24,500,start_UART_USB_Task,Default,NULL,Dynamic,NULL,NULL;LCD_Task,24,256,start_LCD_Task,Default,NULL,Dynamic,NULL,NULL
+FREERTOS.Queues01=UARTQueue,2,QUEUE_t,0,Static,UARTQueueBuffer,UARTQueueControlBlock;buttonQueue,5,uint16_t,0,Dynamic,NULL,NULL;THPQueue,3,QUEUE_BME280,0,Static,THPQueueBuffer,THPQueueControlBlock;rtc_queue,2,QUEUE_RTC,0,Static,rtc_queueBuffer,rtc_queueControlBlock;new_rtc_queue,2,QUEUE_NEW_RTC,0,Static,new_rtc_queueBuffer,new_rtc_queueControlBlock;main_Queue,2,QUEUE_ALL_DATA,0,Static,main_QueueBuffer,main_QueueControlBlock
+FREERTOS.Tasks01=defaultTask,24,128,StartDefaultTask,Default,NULL,Dynamic,NULL,NULL;RTC_DS3231_Task,24,256,start_RTC_DS3231_Task,Default,NULL,Dynamic,NULL,NULL;BPE280_Task,24,256,start_BPE280_Task,Default,NULL,Dynamic,NULL,NULL;MAIN_TASK,24,256,start_MAIN_TASK,Default,NULL,Dynamic,NULL,NULL;UART_USB_Task,24,500,start_UART_USB_Task,Default,NULL,Dynamic,NULL,NULL;LCD_Task,24,256,start_LCD_Task,Default,NULL,Dynamic,NULL,NULL
 FREERTOS.configGENERATE_RUN_TIME_STATS=1
 FREERTOS.configTIMER_TASK_PRIORITY=24
 FREERTOS.configTOTAL_HEAP_SIZE=8000
