@@ -84,22 +84,8 @@ typedef struct
   uint8_t Sec;
 } QUEUE_NEW_RTC;
 
+bool print_first_time_on_lcd_flag = true;
 
-typedef struct
-{
-	uint8_t Year;
-	uint8_t Month;
-	uint8_t Date;
-	uint8_t DaysOfWeek;
-	uint8_t Hour;
-	uint8_t Min;
-	uint8_t Sec;
-
-	int bme280_temperature;
-	int bme280_humidity;
-	int bme280_pressure;
-
-}QUEUE_ALL_DATA;		// Current data ready to show on LCD
 
 /* USER CODE END Includes */
 
@@ -148,10 +134,10 @@ const osThreadAttr_t BPE280_Task_attributes = {
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for MAIN_TASK */
-osThreadId_t MAIN_TASKHandle;
-const osThreadAttr_t MAIN_TASK_attributes = {
-  .name = "MAIN_TASK",
+/* Definitions for SET_RTS_TASK */
+osThreadId_t SET_RTS_TASKHandle;
+const osThreadAttr_t SET_RTS_TASK_attributes = {
+  .name = "SET_RTS_TASK",
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
@@ -166,7 +152,7 @@ const osThreadAttr_t UART_USB_Task_attributes = {
 osThreadId_t LCD_TaskHandle;
 const osThreadAttr_t LCD_Task_attributes = {
   .name = "LCD_Task",
-  .stack_size = 256 * 4,
+  .stack_size = 300 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for UARTQueue */
@@ -218,16 +204,26 @@ const osMessageQueueAttr_t new_rtc_queue_attributes = {
   .mq_mem = &new_rtc_queueBuffer,
   .mq_size = sizeof(new_rtc_queueBuffer)
 };
-/* Definitions for main_Queue */
-osMessageQueueId_t main_QueueHandle;
-uint8_t main_QueueBuffer[ 2 * sizeof( QUEUE_ALL_DATA ) ];
-osStaticMessageQDef_t main_QueueControlBlock;
-const osMessageQueueAttr_t main_Queue_attributes = {
-  .name = "main_Queue",
-  .cb_mem = &main_QueueControlBlock,
-  .cb_size = sizeof(main_QueueControlBlock),
-  .mq_mem = &main_QueueBuffer,
-  .mq_size = sizeof(main_QueueBuffer)
+/* Definitions for nev_val_queue */
+osMessageQueueId_t nev_val_queueHandle;
+uint8_t nev_val_queueBuffer[ 2 * sizeof( uint8_t ) ];
+osStaticMessageQDef_t nev_val_queueControlBlock;
+const osMessageQueueAttr_t nev_val_queue_attributes = {
+  .name = "nev_val_queue",
+  .cb_mem = &nev_val_queueControlBlock,
+  .cb_size = sizeof(nev_val_queueControlBlock),
+  .mq_mem = &nev_val_queueBuffer,
+  .mq_size = sizeof(nev_val_queueBuffer)
+};
+/* Definitions for I2C_Mutex */
+osMutexId_t I2C_MutexHandle;
+const osMutexAttr_t I2C_Mutex_attributes = {
+  .name = "I2C_Mutex"
+};
+/* Definitions for LCD_Sem */
+osSemaphoreId_t LCD_SemHandle;
+const osSemaphoreAttr_t LCD_Sem_attributes = {
+  .name = "LCD_Sem"
 };
 /* USER CODE BEGIN PV */
 
@@ -293,7 +289,7 @@ static void MX_TIM2_Init(void);
 void StartDefaultTask(void *argument);
 void start_RTC_DS3231_Task(void *argument);
 void start_BPE280_Task(void *argument);
-void start_MAIN_TASK(void *argument);
+void start_SET_RTS_TASK(void *argument);
 void start_UART_USB_Task(void *argument);
 void start_LCD_Task(void *argument);
 
@@ -341,10 +337,10 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   // Init LCD
-  ILI9341_SPI_Init();
-  ILI9341_Init();
-  ILI9341_Enable();
-  ILI9341_Fill_Screen(BLACK);
+//  ILI9341_SPI_Init();
+//  ILI9341_Init();
+//  ILI9341_Enable();
+//  ILI9341_Fill_Screen(BLACK);
 
   // DC3231 init
   DS3231_Init(&hi2c1);
@@ -369,10 +365,17 @@ int main(void)
 
   /* Init scheduler */
   osKernelInitialize();
+  /* Create the mutex(es) */
+  /* creation of I2C_Mutex */
+  I2C_MutexHandle = osMutexNew(&I2C_Mutex_attributes);
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
+
+  /* Create the semaphores(s) */
+  /* creation of LCD_Sem */
+  LCD_SemHandle = osSemaphoreNew(1, 1, &LCD_Sem_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -398,8 +401,8 @@ int main(void)
   /* creation of new_rtc_queue */
   new_rtc_queueHandle = osMessageQueueNew (2, sizeof(QUEUE_NEW_RTC), &new_rtc_queue_attributes);
 
-  /* creation of main_Queue */
-  main_QueueHandle = osMessageQueueNew (2, sizeof(QUEUE_ALL_DATA), &main_Queue_attributes);
+  /* creation of nev_val_queue */
+  nev_val_queueHandle = osMessageQueueNew (2, sizeof(uint8_t), &nev_val_queue_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -415,8 +418,8 @@ int main(void)
   /* creation of BPE280_Task */
   BPE280_TaskHandle = osThreadNew(start_BPE280_Task, NULL, &BPE280_Task_attributes);
 
-  /* creation of MAIN_TASK */
-  MAIN_TASKHandle = osThreadNew(start_MAIN_TASK, NULL, &MAIN_TASK_attributes);
+  /* creation of SET_RTS_TASK */
+  SET_RTS_TASKHandle = osThreadNew(start_SET_RTS_TASK, NULL, &SET_RTS_TASK_attributes);
 
   /* creation of UART_USB_Task */
   UART_USB_TaskHandle = osThreadNew(start_UART_USB_Task, NULL, &UART_USB_Task_attributes);
@@ -426,7 +429,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_THREADS */
 
-  //HAL_TIM_Base_Start_IT(&htim2);		//  This TIM3 using for calculate how many time all tasks was running.
+  HAL_TIM_Base_Start_IT(&htim2);		//  This TIM3 using for calculate how many time all tasks was running.
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -740,33 +743,38 @@ void start_RTC_DS3231_Task(void *argument)
 {
   /* USER CODE BEGIN start_RTC_DS3231_Task */
   /* Infinite loop */
-
-//	typedef struct
-//	{
-//	  uint8_t Year;
-//	  uint8_t Month;
-//	  uint8_t Date;
-//	  uint8_t DaysOfWeek;
-//	  uint8_t Hour;
-//	  uint8_t Min;
-//	  uint8_t Sec;
-//	} _RTC;     // QUEUE_RTC
-
 	QUEUE_RTC QUEUE_RTC_t;
 	QUEUE_NEW_RTC QUEUE_NEW_RTC_t;
 
-	// rtc_queueHandle
-	_RTC time;
+	_RTC time; 	// rtc_queueHandle
 
 	for(;;)
 	{
-		if(xQueueReceive(new_rtc_queueHandle , &QUEUE_NEW_RTC_t, 0) == pdTRUE)
+		if(xQueueReceive(new_rtc_queueHandle , &QUEUE_NEW_RTC_t, 0) == pdTRUE)			// Waiting to new rts time and data
 		{
 			// Set new time and data
+			time.Year = QUEUE_NEW_RTC_t.Year;
+			time.Month = QUEUE_NEW_RTC_t.Month;
+			time.Date = QUEUE_NEW_RTC_t.Date ;
+			time.DaysOfWeek = QUEUE_NEW_RTC_t.DaysOfWeek;
+			time.Hour = QUEUE_NEW_RTC_t.Hour;
+			time.Min = QUEUE_NEW_RTC_t.Min;
+			time.Sec = QUEUE_NEW_RTC_t.Sec;
+
+			if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
+			{
+				DS3231_SetTime(&time);
+			}
+			osMutexRelease(I2C_MutexHandle);
+
 		}
-		else
+		else																			// If no new data - show current time
 		{
-			DS3231_GetTime(&time);
+			if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
+			{
+				DS3231_GetTime(&time);
+			}
+			osMutexRelease(I2C_MutexHandle);
 
 			// Fill in structure of queue
 			QUEUE_RTC_t.Year = time.Year;
@@ -777,12 +785,16 @@ void start_RTC_DS3231_Task(void *argument)
 			QUEUE_RTC_t.Min = time.Min;
 			QUEUE_RTC_t.Sec = time.Sec;
 
-			if(xQueueSend(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)
+			if(xQueueSend(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)					// Send current time over queue
 			{
 				// ERROR
 			}
-			osDelay(1000);
+			// Give semaphore
+			osSemaphoreRelease(LCD_SemHandle);		// Let print time and date on start_LCD_Task
 		}
+		osDelay(1000);		// ПОГАНО !!!!! Використати переривання від модуля RTS як синхронізацію
+		// Тобюто, якщо наідйшло переривання то зчитати дані і заповнити чергу і відіслати семафор
+ііі
 	}
   /* USER CODE END start_RTC_DS3231_Task */
 }
@@ -805,133 +817,193 @@ void start_BPE280_Task(void *argument)
 	float pressure, temperature, humidity;
 
 	// Init BME280
-	bmp280_init_default_params(&bmp280.params);
-	bmp280.addr = BMP280_I2C_ADDRESS_0;
-	bmp280.i2c = &hi2c1;
-
-	if(bmp280_init(&bmp280, &bmp280.params) != true)
+	if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
 	{
-		while(1){}   								// ERROR
-	}
+		bmp280_init_default_params(&bmp280.params);
+		bmp280.addr = BMP280_I2C_ADDRESS_0;
+		bmp280.i2c = &hi2c1;
 
-	bool bme280p = bmp280.id == BME280_CHIP_ID;
+		if(bmp280_init(&bmp280, &bmp280.params) != true)
+		{
+			while(1){}   								// ERROR
+		}
+
+		bool bme280p = bmp280.id == BME280_CHIP_ID;
+	}
+	osMutexRelease(I2C_MutexHandle);
+
 
 	for(;;)
 	{
-		if((bmp280_read_float(&bmp280, &temperature, &pressure, &humidity)) != true)
+		if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
 		{
-			while(1){}								// ERROR
-		}
-		else										// IF all okay. Send data into QUEU to the main task
-		{
-			// Fill in fields of struct
-			QUEUE_BME280_t.temperature = temperature;
-			QUEUE_BME280_t.humidity = humidity;
-			QUEUE_BME280_t.pressure = pressure;
-
-			int status_queue = xQueueSend(THPQueueHandle, &QUEUE_BME280_t, 0);		// Send data into queue
-			if(status_queue != pdPASS)
+			if((bmp280_read_float(&bmp280, &temperature, &pressure, &humidity)) != true)
 			{
-				// ERROR
+				while(1){}								// ERROR
+			}
+			else										// IF all okay. Send data into QUEUE to the main task
+			{
+				// Fill in fields of struct
+				QUEUE_BME280_t.temperature = temperature;
+				QUEUE_BME280_t.humidity = humidity;
+				QUEUE_BME280_t.pressure = pressure;
+
+				int status_queue = xQueueSend(THPQueueHandle, &QUEUE_BME280_t, 0);		// Send data into queue
+				if(status_queue != pdPASS)
+				{
+					// ERROR
+				}
+				// Give semaphore
+				osSemaphoreRelease(LCD_SemHandle);		// Let print T, H and P on start_LCD_Task
 			}
 		}
-		osDelay(1000);
+		osMutexRelease(I2C_MutexHandle);
+
+		osDelay(5000);
 	}
   /* USER CODE END start_BPE280_Task */
 }
 
-/* USER CODE BEGIN Header_start_MAIN_TASK */
+/* USER CODE BEGIN Header_start_SET_RTS_TASK */
 /**
-* @brief Function implementing the MAIN_TASK thread.
+* @brief Function implementing the SET_RTS_TASK thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_start_MAIN_TASK */
-void start_MAIN_TASK(void *argument)
+/* USER CODE END Header_start_SET_RTS_TASK */
+void start_SET_RTS_TASK(void *argument)
 {
-  /* USER CODE BEGIN start_MAIN_TASK */
+  /* USER CODE BEGIN start_SET_RTS_TASK */
   /* Infinite loop */
-	//QUEUE_BME280 QUEUE_BME280_t;
 
-	QUEUE_BME280 QUEUE_BME280_t;
 	QUEUE_RTC QUEUE_RTC_t;
 	QUEUE_NEW_RTC QUEUE_NEW_RTC_t;
-	QUEUE_ALL_DATA QUEUE_ALL_DATA_t; 		// Global data queue for send to LCD task (to print)
 
-	for(;;)
-	{
-		// Waiting press the any button
-		uint16_t pressed_key, status_queue = 0;
-		status_queue = xQueueReceive( buttonQueueHandle , &pressed_key, 0 );
-		if (status_queue == pdTRUE)
-		{
-			// 1. Set new oclock
-			if(pressed_key == 1)
-			{
-				HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-			}
-			else if(pressed_key == 2)
-			{
-				HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-			}
-			else if(pressed_key == 3)
-			{
-				HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-			}
-			else if(pressed_key == 4)
-			{
-				HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-			}
-			//HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-
-			// 2. Send new time qwer queue into rtc task
+  for(;;)
+  {
 
 
-		}
-		else	// Show time, date, temperature, humidity and pressure
-		{
-			// 1. Get T, H and P Internal sensor
-			if(xQueueReceive(THPQueueHandle, &QUEUE_BME280_t, 0) != pdTRUE);
-			if(status_queue != pdTRUE)
-			{
-				// Error
-			}
+	  uint16_t pressed_key, status_queue = 0;
+	  status_queue = xQueueReceive( buttonQueueHandle , &pressed_key, 0 );
+	  if (status_queue == pdTRUE)
+	  {
+		  if(pressed_key == 1)
+		  {
+				QUEUE_NEW_RTC_t.Year = 11;
+				QUEUE_NEW_RTC_t.Month = 11;
+				QUEUE_NEW_RTC_t.Date = 11;
+				QUEUE_NEW_RTC_t.DaysOfWeek = 11;
+				QUEUE_NEW_RTC_t.Hour = 11;
+				QUEUE_NEW_RTC_t.Min = 11;
+				QUEUE_NEW_RTC_t.Sec = 11;
 
-			QUEUE_ALL_DATA_t.bme280_temperature = QUEUE_BME280_t.temperature;
-			QUEUE_ALL_DATA_t.bme280_humidity = QUEUE_BME280_t.humidity;
-			QUEUE_ALL_DATA_t.bme280_pressure = QUEUE_BME280_t.pressure;
+				if(xQueueSend(new_rtc_queueHandle, &QUEUE_NEW_RTC_t, 0) != pdPASS)
+				{
+					// ERROR
+				}
 
-			// 2. Get time and data
-			if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) !=  pdTRUE)
-			{
-				// Error
-			}
-
-			QUEUE_ALL_DATA_t.Year = QUEUE_RTC_t.Year;
-			QUEUE_ALL_DATA_t.Month = QUEUE_RTC_t.Month;
-			QUEUE_ALL_DATA_t.Date = QUEUE_RTC_t.Date;
-			QUEUE_ALL_DATA_t.DaysOfWeek = QUEUE_RTC_t.DaysOfWeek;
-			QUEUE_ALL_DATA_t.Hour = QUEUE_RTC_t.Hour;
-			QUEUE_ALL_DATA_t.Min = QUEUE_RTC_t.Min;
-			QUEUE_ALL_DATA_t.Sec = QUEUE_RTC_t.Sec;
-
-			// Send queue into LCD task
-			if(xQueueSend(main_QueueHandle, &QUEUE_ALL_DATA_t, 0) != pdTRUE)
-			{
-				// Error
-			}
-
-
-
-
-
-
+				print_first_time_on_lcd_flag = true;
+		  }
 	  }
+	  osDelay(1000);
 
 
-   // osDelay(1);
+//		// Waiting press the any button
+//			uint16_t pressed_key, status_queue = 0;
+//			status_queue = xQueueReceive( buttonQueueHandle , &pressed_key, 0 );
+//			if (status_queue == pdTRUE)
+//			{
+//				if(pressed_key == 1)
+//				{
+//					// 1. Stop RTC task
+//					osThreadSuspend(RTC_DS3231_TaskHandle);
+//					osThreadSuspend(BPE280_TaskHandle);
+//
+//		//			uint8_t seconds = 0;
+//		//			uint8_t minutes = 0;
+//		//			uint8_t hours = 0;
+//
+//
+//					uint8_t new_year = 0;
+//					uint8_t i = 0;
+//
+//					do{
+//						if(pressed_key == 2)
+//						{
+//	//						if(i == 0)
+//	//						{
+//								new_year--;
+//
+//	//						}
+//								pressed_key = 0;
+//						}
+//						if(pressed_key == 3)
+//						{
+//	//						if(i == 0)
+//	//						{
+//								new_year++;
+//	//						}
+//								pressed_key = 0;
+//						}
+//
+//						// Sent queue into LCD task ()
+//						if(xQueueSend(nev_val_queueHandle, &new_year, 0) != pdPASS)
+//						{
+//
+//						}
+//
+//
+//						if(pressed_key == 4)		// Save new data into struct
+//						{
+//							//UEUE_NEW_RTC_t.
+//							i++;
+//						}
+//
+//						xQueueReceive( buttonQueueHandle , &pressed_key, 0 );
+//					}while(i <= 7);
+//				}
+//
+//
+//				// Send global new time and data into RTC tssk
+//
+//
+//
+//
+//				osThreadResume(RTC_DS3231_TaskHandle);
+//				osThreadResume(BPE280_TaskHandle);
+//
+//
+//
+//				if(pressed_key == 1)
+//				{
+//					HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+//				}
+//				else if(pressed_key == 2)
+//				{
+//					HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+//				}
+//				else if(pressed_key == 3)
+//				{
+//					HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+//				}
+//				else if(pressed_key == 4)
+//				{
+//					HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+//				}
+//				//HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+//
+//				// 2. Send new time qwer queue into rtc task
+//
+//
+//			}
+
+
+
+
+
+
   }
-  /* USER CODE END start_MAIN_TASK */
+  /* USER CODE END start_SET_RTS_TASK */
 }
 
 /* USER CODE BEGIN Header_start_UART_USB_Task */
@@ -1022,18 +1094,11 @@ void start_LCD_Task(void *argument)
 {
   /* USER CODE BEGIN start_LCD_Task */
   /* Infinite loop */
-	QUEUE_ALL_DATA QUEUE_ALL_DATA_t; 		// Global data queue for send to LCD task (to print)
+	//QUEUE_ALL_DATA QUEUE_ALL_DATA_t; 		// Global data queue for send to LCD task (to print)
 
-	bool two_point = true;
 
-	ILI9341_Reset();
-	ILI9341_Init();
-	ILI9341_Fill_Screen(BLACK);
-
-	// Draw static lines
-	ILI9341_Draw_Hollow_Rectangle_Coord(0, 0, 319, 150, BLUE);
-
-	osDelay(1000);
+	QUEUE_BME280 QUEUE_BME280_t;
+	QUEUE_RTC QUEUE_RTC_t;
 
 	char str_hour[4] = {0};
 	char str_minute[4] = {0};
@@ -1042,29 +1107,225 @@ void start_LCD_Task(void *argument)
 	char str_date[15] = {0};
 	char str_time_buf[10] = {0};
 
-	char str_temperature[5] = {0};
-	char str_humidity[5] = {0};
-	char str_preassure[10] = {0};
-	char strthp_buf[15] = {0};
+	bool two_point = true;
+//	static bool print_first_time_on_lcd_flag = true;
 
-	static bool print_first_time_on_lcd_flag = true;
+	ILI9341_Reset();
+	ILI9341_Init();
+	ILI9341_Fill_Screen(BLACK);
+
+	osDelay(1000);
+
+	// Draw static lines
+	ILI9341_Draw_Hollow_Rectangle_Coord(0, 0, 319, 150, BLUE);
 
 	for(;;)
 	{
-		if(xQueueReceive(main_QueueHandle , &QUEUE_ALL_DATA_t, 0) != pdTRUE)
-		{
-			// ERROR
-		}
-		else
-		{
-			if(print_first_time_on_lcd_flag == true)				// If print data firsttime
-					{
-						sprintf(str_hour, "%d", QUEUE_ALL_DATA_t.Hour);
-						sprintf(str_minute, "%d", QUEUE_ALL_DATA_t.Min);
-						sprintf(str_msecond, "%d", QUEUE_ALL_DATA_t.Sec);
 
-						// Updating hours  on LCD
-						if(QUEUE_ALL_DATA_t.Hour < 10)
+//		if(eet RTC mode)
+//		{
+//			1. Clear time and data LCD part.
+//			2. show selected value.
+//		}
+
+//		uint8_t new_rtc_vvvv = 0;
+//		if(xQueueReceive(nev_val_queueHandle, &new_rtc_vvvv, 0) == pdPASS)
+//		{
+//			// Clear LCD
+//			ILI9341_Fill_Screen(BLACK);
+//
+//			// Show new value on LCD
+//			char ssss[5] = {0};
+//			sprintf(ssss, "%d", new_rtc_vvvv);
+//			ILI9341_Draw_Text(ssss, 100, 10, YELLOW, 2, BLACK);
+//
+//
+//		}
+
+
+		osStatus_t status = osSemaphoreAcquire(LCD_SemHandle, 10);
+		if(status == 0)
+		{
+		// If data from BME280 is ready print T, H and  P
+		// Waiting semaphore from
+//		osStatus_t status = osSemaphoreAcquire(print_THPSemHandle, 0);
+//		if(status == 0)
+//		{
+			if((xQueueReceive(THPQueueHandle, &QUEUE_BME280_t, 0)) == pdTRUE)
+			{
+				// Print T, H and  P on LCD
+				char str_temperature[5] = {0};
+				char str_humidity[5] = {0};
+				char str_preassure[10] = {0};
+
+				//int preasure = QUEUE_BME280_t.pressure;
+				sprintf(str_temperature, "%d", (int)QUEUE_BME280_t.temperature);
+				char strthp_buf_t[1] = {0};
+				strncat(strthp_buf_t, "T:", 2);
+				strncat(strthp_buf_t, str_temperature, sizeof(str_temperature));
+				strncat(strthp_buf_t, " C", 2);
+				ILI9341_Draw_Text(strthp_buf_t, 10, 160, YELLOW, 2, BLACK);
+
+				sprintf(str_humidity, "%d", (int)QUEUE_BME280_t.humidity);
+				char strthp_buf_h[10] = {0};
+				strncat(strthp_buf_h, "H:", 2);
+				strncat(strthp_buf_h, str_humidity, sizeof(str_humidity));
+				strncat(strthp_buf_h, " %", 2);
+				ILI9341_Draw_Text(strthp_buf_h, 10, 180, YELLOW, 2, BLACK);
+
+				sprintf(str_preassure, "%d", (int)QUEUE_BME280_t.pressure);
+				char strthp_buf_p[17] = {0};
+				strncat(strthp_buf_p, "P:", 2);
+				strncat(strthp_buf_p, str_preassure, sizeof(str_preassure));
+				strncat(strthp_buf_p, " mmRh", 4);
+				ILI9341_Draw_Text(strthp_buf_p, 10, 200, YELLOW, 2, BLACK);
+			}
+//		}
+
+
+		// If data from RTC  is ready print it
+//		status = 99;
+//		status = osSemaphoreAcquire(print_RTCSemHandle, 0);
+//		if(status == 0)
+//		{
+			if((xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdPASS))
+			{
+				if((print_first_time_on_lcd_flag == true) )				// If print data firsttime
+				{
+					sprintf(str_hour, "%d", QUEUE_RTC_t.Hour);
+					sprintf(str_minute, "%d", QUEUE_RTC_t.Min);
+					sprintf(str_msecond, "%d", QUEUE_RTC_t.Sec);
+
+					// Updating hours  on LCD
+					if(QUEUE_RTC_t.Hour < 10)
+					{
+						char hour_buff[5] = {0};
+						strncat(hour_buff, "0", 1);
+						strncat(hour_buff, str_hour, sizeof(str_hour));
+						ILI9341_Draw_Text(hour_buff, 10, 1, GREEN, 10, BLACK);
+					}
+					else
+					{
+						ILI9341_Draw_Text(str_hour, 10, 1, GREEN, 10, BLACK);
+					}
+
+					// Updating minutes on LCD
+					if(QUEUE_RTC_t.Min < 10)
+					{
+						char min_buff[5] = {0};
+						strncat(min_buff, "0", 1);
+						strncat(min_buff, str_minute, sizeof(str_minute));
+						ILI9341_Draw_Text(min_buff, 195, 1, GREEN, 10, BLACK);
+					}
+					else
+					{
+						ILI9341_Draw_Text(str_minute, 195, 1, GREEN, 10, BLACK);
+					}
+
+					// Updating seconds on LCD
+					if(QUEUE_RTC_t.Sec == 0)
+					{
+						ILI9341_Draw_Text("  ", 215, 85, GREEN, 6, BLACK);
+					}
+					if(QUEUE_RTC_t.Sec < 10)
+					{
+						// add '0'
+						char second_buff[5] = {0};
+						strncat(second_buff, "0", 1);
+						strncat(second_buff, str_msecond, sizeof(str_msecond));
+						//strncat(str_time_buf, minute_buff, sizeof(minute_buff));
+						ILI9341_Draw_Text(second_buff, 215, 85, GREEN, 6, BLACK);
+					}
+					else
+					{
+						ILI9341_Draw_Text(str_msecond, 215, 85, GREEN, 6, BLACK);
+					}
+
+					// Draw seconds line
+					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
+					if(QUEUE_RTC_t.Sec == 0)
+					{
+						ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
+					}
+
+					// Updating blink two points on LCD
+					if(two_point == true)
+					{
+						ILI9341_Draw_Text(":", 135, 1, GREEN, 10, BLACK);
+						two_point = false;
+					}
+					else
+					{
+						ILI9341_Draw_Text(" ", 135, 1, GREEN, 10, BLACK);
+						two_point = true;
+					}
+
+					// Date
+					ILI9341_Draw_Text("        ", 10, 86, BLUE, 4, BLACK);
+					memset(str_buf, 0 , sizeof(str_buf));
+					sprintf(str_date, "%d", QUEUE_RTC_t.Date);
+
+					strncat(str_date, ".", 1);
+					sprintf(str_buf, "%d", QUEUE_RTC_t.Month);
+					strncat(str_date, str_buf, sizeof(str_buf));
+					memset(str_buf, 0 , sizeof(str_buf));
+					sprintf(str_buf, "%d", QUEUE_RTC_t.Year);
+					strncat(str_date, ".", 1);
+					strncat(str_date, str_buf, sizeof(str_buf));
+					ILI9341_Draw_Text(str_date, 10, 86, BLUE, 4, BLACK);
+
+					ILI9341_Draw_Text("           ", 10, 120, BLUE, 2, BLACK);
+
+					switch (QUEUE_RTC_t.DaysOfWeek)
+					{
+						case 1:
+							ILI9341_Draw_Text("MONDAY", 10, 120, BLUE, 2, BLACK);
+							break;
+						case 2:
+							ILI9341_Draw_Text("TUESDAY", 10, 120, BLUE, 2, BLACK);
+							break;
+						case 3:
+							ILI9341_Draw_Text("WEDNESDAY", 10, 120, BLUE, 2, BLACK);
+							break;
+						case 4:
+							ILI9341_Draw_Text("THURSDAY", 10, 120, BLUE, 2, BLACK);
+							break;
+						case 5:
+							ILI9341_Draw_Text("FRIDAY", 10, 120, BLUE, 2, BLACK);
+							break;
+						case 6:
+							ILI9341_Draw_Text("SATURDAY", 10, 120, BLUE, 2, BLACK);
+							break;
+						case 7:
+							ILI9341_Draw_Text("SUNDAY", 10, 120, BLUE, 2, BLACK);
+							break;
+					}
+
+					print_first_time_on_lcd_flag = false;
+
+				}
+				else
+				{
+					sprintf(str_hour, "%d", QUEUE_RTC_t.Hour);
+					sprintf(str_minute, "%d", QUEUE_RTC_t.Min);
+					sprintf(str_msecond, "%d", QUEUE_RTC_t.Sec);
+
+					// Updating hours and minutes on LCD
+					if(QUEUE_RTC_t.Sec == 0)
+					{
+						if(QUEUE_RTC_t.Min < 10)
+						{
+							char min_buff[5] = {0};
+							strncat(min_buff, "0", 1);
+							strncat(min_buff, str_minute, sizeof(str_minute));
+							ILI9341_Draw_Text(min_buff, 195, 1, GREEN, 10, BLACK);
+						}
+						else
+						{
+							ILI9341_Draw_Text(str_minute, 195, 1, GREEN, 10, BLACK);
+						}
+
+						if(QUEUE_RTC_t.Hour < 10)
 						{
 							char hour_buff[5] = {0};
 							strncat(hour_buff, "0", 1);
@@ -1075,76 +1336,64 @@ void start_LCD_Task(void *argument)
 						{
 							ILI9341_Draw_Text(str_hour, 10, 1, GREEN, 10, BLACK);
 						}
+					}
 
-						// Updating minutes on LCD
-						if(QUEUE_ALL_DATA_t.Min < 10)
-						{
-							  char min_buff[5] = {0};
-							  strncat(min_buff, "0", 1);
-							  strncat(min_buff, str_minute, sizeof(str_minute));
-							  ILI9341_Draw_Text(min_buff, 195, 1, GREEN, 10, BLACK);
-						}
-						else
-						{
-							  ILI9341_Draw_Text(str_minute, 195, 1, GREEN, 10, BLACK);
-						}
+					// Updating seconds on LCD
+					if(QUEUE_RTC_t.Sec == 0)
+					{
+						ILI9341_Draw_Text("  ", 215, 85, GREEN, 6, BLACK);
+					}
+					if(QUEUE_RTC_t.Sec < 10)
+					{
+						// add '0'
+						char second_buff[5] = {0};
+						strncat(second_buff, "0", 1);
+						strncat(second_buff, str_msecond, sizeof(str_msecond));
+						ILI9341_Draw_Text(second_buff, 215, 85, GREEN, 6, BLACK);
+					}
+					else
+					{
+						ILI9341_Draw_Text(str_msecond, 215, 85, GREEN, 6, BLACK);
+					}
 
+					// Draw seconds line
+					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
+					if(QUEUE_RTC_t.Sec == 0)
+					{
+						ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
+					}
 
-						// Updating seconds on LCD
-						if(QUEUE_ALL_DATA_t.Sec == 0)
-						{
-							ILI9341_Draw_Text("  ", 215, 85, GREEN, 6, BLACK);
-						}
-						if(QUEUE_ALL_DATA_t.Sec < 10)
-						{
-							// add '0'
-							char second_buff[5] = {0};
-							strncat(second_buff, "0", 1);
-							strncat(second_buff, str_msecond, sizeof(str_msecond));
-							//strncat(str_time_buf, minute_buff, sizeof(minute_buff));
-							ILI9341_Draw_Text(second_buff, 215, 85, GREEN, 6, BLACK);
-						}
-						else
-						{
-							ILI9341_Draw_Text(str_msecond, 215, 85, GREEN, 6, BLACK);
-						}
+					// Updating blink two points on LCD
+					if(two_point == true)
+					{
+						ILI9341_Draw_Text(":", 135, 1, GREEN, 10, BLACK);
+						two_point = false;
+					}
+					else
+					{
+						ILI9341_Draw_Text(" ", 135, 1, GREEN, 10, BLACK);
+						two_point = true;
+					}
 
-						// Draw seconds line
-						ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_ALL_DATA_t.Sec), 4, GREEN);
-						if(QUEUE_ALL_DATA_t.Sec == 0)
-						{
-							ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
-						}
-
-						// Updating blink two points on LCD
-						if(two_point == true)
-						{
-							ILI9341_Draw_Text(":", 135, 1, GREEN, 10, BLACK);
-							two_point = false;
-						}
-						else
-						{
-							ILI9341_Draw_Text(" ", 135, 1, GREEN, 10, BLACK);
-							two_point = true;
-						}
-
+					if(QUEUE_RTC_t.Sec == 0)
+					{
 						// Date
 						ILI9341_Draw_Text("        ", 10, 86, BLUE, 4, BLACK);
 						memset(str_buf, 0 , sizeof(str_buf));
-						sprintf(str_date, "%d", QUEUE_ALL_DATA_t.Date);
+						sprintf(str_date, "%d", QUEUE_RTC_t.Date);
 
 						strncat(str_date, ".", 1);
-						sprintf(str_buf, "%d", QUEUE_ALL_DATA_t.Month);
+						sprintf(str_buf, "%d", QUEUE_RTC_t.Month);
 						strncat(str_date, str_buf, sizeof(str_buf));
 						memset(str_buf, 0 , sizeof(str_buf));
-						sprintf(str_buf, "%d", QUEUE_ALL_DATA_t.Year);
+						sprintf(str_buf, "%d", QUEUE_RTC_t.Year);
 						strncat(str_date, ".", 1);
 						strncat(str_date, str_buf, sizeof(str_buf));
 						ILI9341_Draw_Text(str_date, 10, 86, BLUE, 4, BLACK);
 
 						ILI9341_Draw_Text("           ", 10, 120, BLUE, 2, BLACK);
 
-						switch (QUEUE_ALL_DATA_t.DaysOfWeek)
+						switch (QUEUE_RTC_t.DaysOfWeek)
 						{
 							case 1:
 								ILI9341_Draw_Text("MONDAY", 10, 120, BLUE, 2, BLACK);
@@ -1169,448 +1418,15 @@ void start_LCD_Task(void *argument)
 								break;
 						}
 
-						// Print T, H and  P on LCD
-						sprintf(str_temperature, "%d", QUEUE_ALL_DATA_t.bme280_temperature);
-						sprintf(str_humidity, "%d", QUEUE_ALL_DATA_t.bme280_humidity);
-						sprintf(str_preassure, "%d", QUEUE_ALL_DATA_t.bme280_pressure);
-
-						strncat(strthp_buf, "T:", 2);
-						strncat(strthp_buf, str_temperature, sizeof(str_temperature));
-						strncat(strthp_buf, " C", 2);
-						ILI9341_Draw_Text(strthp_buf, 10, 160, YELLOW, 2, BLACK);
-
-						char strthp_buf_1[10] = {0};
-						strncat(strthp_buf_1, "H:", 2);
-						strncat(strthp_buf_1, str_humidity, sizeof(str_humidity));
-						strncat(strthp_buf_1, " %", 2);
-						ILI9341_Draw_Text(strthp_buf_1, 10, 180, YELLOW, 2, BLACK);
-
-						char strthp_buf_2[10] = {0};
-						strncat(strthp_buf_2, "P:", 2);
-						strncat(strthp_buf_2, str_preassure, sizeof(str_preassure));
-						strncat(strthp_buf_2, " mmRh", 4);
-						ILI9341_Draw_Text(strthp_buf_2, 10, 200, YELLOW, 2, BLACK);
-
-						print_first_time_on_lcd_flag = false;
-						osDelay(1000);
 					}
-					else
-					{
-						sprintf(str_hour, "%d", QUEUE_ALL_DATA_t.Hour);
-						sprintf(str_minute, "%d", QUEUE_ALL_DATA_t.Min);
-						sprintf(str_msecond, "%d", QUEUE_ALL_DATA_t.Sec);
 
-						// Updating hours and minutes on LCD
-						if(QUEUE_ALL_DATA_t.Sec == 0)
-						{
-							if(QUEUE_ALL_DATA_t.Min < 10)
-							{
-								char min_buff[5] = {0};
-								strncat(min_buff, "0", 1);
-								strncat(min_buff, str_minute, sizeof(str_minute));
-								ILI9341_Draw_Text(min_buff, 195, 1, GREEN, 10, BLACK);
-							}
-							else
-							{
-								ILI9341_Draw_Text(str_minute, 195, 1, GREEN, 10, BLACK);
-							}
+				}
+			}
+		}   // semaphore
 
-							if(QUEUE_ALL_DATA_t.Hour < 10)
-							{
-								char hour_buff[5] = {0};
-								strncat(hour_buff, "0", 1);
-								strncat(hour_buff, str_hour, sizeof(str_hour));
-								ILI9341_Draw_Text(hour_buff, 10, 1, GREEN, 10, BLACK);
-							}
-							else
-							{
-								ILI9341_Draw_Text(str_hour, 10, 1, GREEN, 10, BLACK);
-							}
-						}
 
-						// Updating seconds on LCD
-						if(QUEUE_ALL_DATA_t.Sec == 0)
-						{
-							ILI9341_Draw_Text("  ", 215, 85, GREEN, 6, BLACK);
-						}
-						if(QUEUE_ALL_DATA_t.Sec < 10)
-						{
-							// add '0'
-							char second_buff[5] = {0};
-							strncat(second_buff, "0", 1);
-							strncat(second_buff, str_msecond, sizeof(str_msecond));
-							ILI9341_Draw_Text(second_buff, 215, 85, GREEN, 6, BLACK);
-						}
-						else
-						{
-							ILI9341_Draw_Text(str_msecond, 215, 85, GREEN, 6, BLACK);
-						}
 
-						// Draw seconds line
-						ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_ALL_DATA_t.Sec), 4, GREEN);
-						if(QUEUE_ALL_DATA_t.Sec == 0)
-						{
-							ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
-						}
-
-						// Updating blink two points on LCD
-						if(two_point == true)
-						{
-							ILI9341_Draw_Text(":", 135, 1, GREEN, 10, BLACK);
-							two_point = false;
-						}
-						else
-						{
-							ILI9341_Draw_Text(" ", 135, 1, GREEN, 10, BLACK);
-							two_point = true;
-						}
-
-						if(QUEUE_ALL_DATA_t.Sec == 0)
-						{
-							// Date
-							ILI9341_Draw_Text("        ", 10, 86, BLUE, 4, BLACK);
-							memset(str_buf, 0 , sizeof(str_buf));
-							sprintf(str_date, "%d", QUEUE_ALL_DATA_t.Date);
-
-							strncat(str_date, ".", 1);
-							sprintf(str_buf, "%d", QUEUE_ALL_DATA_t.Month);
-							strncat(str_date, str_buf, sizeof(str_buf));
-							memset(str_buf, 0 , sizeof(str_buf));
-							sprintf(str_buf, "%d", QUEUE_ALL_DATA_t.Year);
-							strncat(str_date, ".", 1);
-							strncat(str_date, str_buf, sizeof(str_buf));
-							ILI9341_Draw_Text(str_date, 10, 86, BLUE, 4, BLACK);
-
-							ILI9341_Draw_Text("           ", 10, 120, BLUE, 2, BLACK);
-
-							switch (QUEUE_ALL_DATA_t.DaysOfWeek)
-							{
-								case 1:
-									ILI9341_Draw_Text("MONDAY", 10, 120, BLUE, 2, BLACK);
-									break;
-								case 2:
-									ILI9341_Draw_Text("TUESDAY", 10, 120, BLUE, 2, BLACK);
-									break;
-								case 3:
-									ILI9341_Draw_Text("WEDNESDAY", 10, 120, BLUE, 2, BLACK);
-									break;
-								case 4:
-									ILI9341_Draw_Text("THURSDAY", 10, 120, BLUE, 2, BLACK);
-									break;
-								case 5:
-									ILI9341_Draw_Text("FRIDAY", 10, 120, BLUE, 2, BLACK);
-									break;
-								case 6:
-									ILI9341_Draw_Text("SATURDAY", 10, 120, BLUE, 2, BLACK);
-									break;
-								case 7:
-									ILI9341_Draw_Text("SUNDAY", 10, 120, BLUE, 2, BLACK);
-									break;
-							}
-
-							sprintf(str_temperature, "%d", QUEUE_ALL_DATA_t.bme280_temperature);
-							sprintf(str_humidity, "%d", QUEUE_ALL_DATA_t.bme280_humidity);
-							sprintf(str_preassure, "%d", QUEUE_ALL_DATA_t.bme280_pressure);
-
-							char strthp_buf_0[10] = {0};
-							strncat(strthp_buf_0, "T:", 2);
-							strncat(strthp_buf_0, str_temperature, sizeof(str_temperature));
-							strncat(strthp_buf_0, " C", 2);
-							ILI9341_Draw_Text(strthp_buf_0, 10, 160, YELLOW, 2, BLACK);
-
-							char strthp_buf_1[10] = {0};
-							strncat(strthp_buf_1, "H:", 2);
-							strncat(strthp_buf_1, str_humidity, sizeof(str_humidity));
-							strncat(strthp_buf_1, " %", 2);
-							ILI9341_Draw_Text(strthp_buf_1, 10, 180, YELLOW, 2, BLACK);
-
-							char strthp_buf_2[10] = {0};
-							strncat(strthp_buf_2, "P:", 2);
-							strncat(strthp_buf_2, str_preassure, sizeof(str_preassure));
-							strncat(strthp_buf_2, " mmRh", 4);
-							ILI9341_Draw_Text(strthp_buf_2, 10, 200, YELLOW, 2, BLACK);
-						}
-						osDelay(1000);
-					}
-		}
-
-//		if(print_first_time_on_lcd_flag == true)				// If print data firsttime
-//		{
-//			sprintf(str_hour, "%d", QUEUE_ALL_DATA_t.Hour);
-//			sprintf(str_minute, "%d", QUEUE_ALL_DATA_t.Min);
-//			sprintf(str_msecond, "%d", QUEUE_ALL_DATA_t.Sec);
-//
-//			// Updating hours  on LCD
-//			if(QUEUE_ALL_DATA_t.Hour < 10)
-//			{
-//				char hour_buff[5] = {0};
-//				strncat(hour_buff, "0", 1);
-//				strncat(hour_buff, str_hour, sizeof(str_hour));
-//				ILI9341_Draw_Text(hour_buff, 10, 1, GREEN, 10, BLACK);
-//			}
-//			else
-//			{
-//				ILI9341_Draw_Text(str_hour, 10, 1, GREEN, 10, BLACK);
-//			}
-//
-//			// Updating minutes on LCD
-//			if(QUEUE_ALL_DATA_t.Min < 10)
-//			{
-//				  char min_buff[5] = {0};
-//				  strncat(min_buff, "0", 1);
-//				  strncat(min_buff, str_minute, sizeof(str_minute));
-//				  ILI9341_Draw_Text(min_buff, 195, 1, GREEN, 10, BLACK);
-//			}
-//			else
-//			{
-//				  ILI9341_Draw_Text(str_minute, 195, 1, GREEN, 10, BLACK);
-//			}
-//
-//
-//			// Updating seconds on LCD
-//			if(QUEUE_ALL_DATA_t.Sec == 0)
-//			{
-//				ILI9341_Draw_Text("  ", 215, 85, GREEN, 6, BLACK);
-//			}
-//			if(QUEUE_ALL_DATA_t.Sec < 10)
-//			{
-//				// add '0'
-//				char second_buff[5] = {0};
-//				strncat(second_buff, "0", 1);
-//				strncat(second_buff, str_msecond, sizeof(str_msecond));
-//				//strncat(str_time_buf, minute_buff, sizeof(minute_buff));
-//				ILI9341_Draw_Text(second_buff, 215, 85, GREEN, 6, BLACK);
-//			}
-//			else
-//			{
-//				ILI9341_Draw_Text(str_msecond, 215, 85, GREEN, 6, BLACK);
-//			}
-//
-//			// Draw seconds line
-//			ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_ALL_DATA_t.Sec), 4, GREEN);
-//			if(QUEUE_ALL_DATA_t.Sec == 0)
-//			{
-//				ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
-//			}
-//
-//			// Updating blink two points on LCD
-//			if(two_point == true)
-//			{
-//				ILI9341_Draw_Text(":", 135, 1, GREEN, 10, BLACK);
-//				two_point = false;
-//			}
-//			else
-//			{
-//				ILI9341_Draw_Text(" ", 135, 1, GREEN, 10, BLACK);
-//				two_point = true;
-//			}
-//
-//			// Date
-//			ILI9341_Draw_Text("        ", 10, 86, BLUE, 4, BLACK);
-//			memset(str_buf, 0 , sizeof(str_buf));
-//			sprintf(str_date, "%d", QUEUE_ALL_DATA_t.Date);
-//
-//			strncat(str_date, ".", 1);
-//			sprintf(str_buf, "%d", QUEUE_ALL_DATA_t.Month);
-//			strncat(str_date, str_buf, sizeof(str_buf));
-//			memset(str_buf, 0 , sizeof(str_buf));
-//			sprintf(str_buf, "%d", QUEUE_ALL_DATA_t.Year);
-//			strncat(str_date, ".", 1);
-//			strncat(str_date, str_buf, sizeof(str_buf));
-//			ILI9341_Draw_Text(str_date, 10, 86, BLUE, 4, BLACK);
-//
-//			ILI9341_Draw_Text("           ", 10, 120, BLUE, 2, BLACK);
-//
-//			switch (QUEUE_ALL_DATA_t.DaysOfWeek)
-//			{
-//				case 1:
-//					ILI9341_Draw_Text("MONDAY", 10, 120, BLUE, 2, BLACK);
-//					break;
-//				case 2:
-//					ILI9341_Draw_Text("TUESDAY", 10, 120, BLUE, 2, BLACK);
-//					break;
-//				case 3:
-//					ILI9341_Draw_Text("WEDNESDAY", 10, 120, BLUE, 2, BLACK);
-//					break;
-//				case 4:
-//					ILI9341_Draw_Text("THURSDAY", 10, 120, BLUE, 2, BLACK);
-//					break;
-//				case 5:
-//					ILI9341_Draw_Text("FRIDAY", 10, 120, BLUE, 2, BLACK);
-//					break;
-//				case 6:
-//					ILI9341_Draw_Text("SATURDAY", 10, 120, BLUE, 2, BLACK);
-//					break;
-//				case 7:
-//					ILI9341_Draw_Text("SUNDAY", 10, 120, BLUE, 2, BLACK);
-//					break;
-//			}
-//
-//			// Print T, H and  P on LCD
-//			sprintf(str_temperature, "%d", QUEUE_ALL_DATA_t.bme280_temperature);
-//			sprintf(str_humidity, "%d", QUEUE_ALL_DATA_t.bme280_humidity);
-//			sprintf(str_preassure, "%d", QUEUE_ALL_DATA_t.bme280_pressure);
-//
-//			strncat(strthp_buf, "T:", 2);
-//			strncat(strthp_buf, str_temperature, sizeof(str_temperature));
-//			strncat(strthp_buf, " C", 2);
-//			ILI9341_Draw_Text(strthp_buf, 10, 160, YELLOW, 2, BLACK);
-//
-//			char strthp_buf_1[10] = {0};
-//			strncat(strthp_buf_1, "H:", 2);
-//			strncat(strthp_buf_1, str_humidity, sizeof(str_humidity));
-//			strncat(strthp_buf_1, " %", 2);
-//			ILI9341_Draw_Text(strthp_buf_1, 10, 180, YELLOW, 2, BLACK);
-//
-//			char strthp_buf_2[10] = {0};
-//			strncat(strthp_buf_2, "P:", 2);
-//			strncat(strthp_buf_2, str_preassure, sizeof(str_preassure));
-//			strncat(strthp_buf_2, " mmRh", 4);
-//			ILI9341_Draw_Text(strthp_buf_2, 10, 200, YELLOW, 2, BLACK);
-//
-//			print_first_time_on_lcd_flag = false;
-//			osDelay(1000);
-//		}
-//		else
-//		{
-//			sprintf(str_hour, "%d", QUEUE_ALL_DATA_t.Hour);
-//			sprintf(str_minute, "%d", QUEUE_ALL_DATA_t.Min);
-//			sprintf(str_msecond, "%d", QUEUE_ALL_DATA_t.Sec);
-//
-//			// Updating hours and minutes on LCD
-//			if(QUEUE_ALL_DATA_t.Sec == 0)
-//			{
-//				if(QUEUE_ALL_DATA_t.Min < 10)
-//				{
-//					char min_buff[5] = {0};
-//					strncat(min_buff, "0", 1);
-//					strncat(min_buff, str_minute, sizeof(str_minute));
-//					ILI9341_Draw_Text(min_buff, 195, 1, GREEN, 10, BLACK);
-//				}
-//				else
-//				{
-//					ILI9341_Draw_Text(str_minute, 195, 1, GREEN, 10, BLACK);
-//				}
-//
-//				if(QUEUE_ALL_DATA_t.Hour < 10)
-//				{
-//					char hour_buff[5] = {0};
-//					strncat(hour_buff, "0", 1);
-//					strncat(hour_buff, str_hour, sizeof(str_hour));
-//					ILI9341_Draw_Text(hour_buff, 10, 1, GREEN, 10, BLACK);
-//				}
-//				else
-//				{
-//					ILI9341_Draw_Text(str_hour, 10, 1, GREEN, 10, BLACK);
-//				}
-//			}
-//
-//			// Updating seconds on LCD
-//			if(QUEUE_ALL_DATA_t.Sec == 0)
-//			{
-//				ILI9341_Draw_Text("  ", 215, 85, GREEN, 6, BLACK);
-//			}
-//			if(QUEUE_ALL_DATA_t.Sec < 10)
-//			{
-//				// add '0'
-//				char second_buff[5] = {0};
-//				strncat(second_buff, "0", 1);
-//				strncat(second_buff, str_msecond, sizeof(str_msecond));
-//				ILI9341_Draw_Text(second_buff, 215, 85, GREEN, 6, BLACK);
-//			}
-//			else
-//			{
-//				ILI9341_Draw_Text(str_msecond, 215, 85, GREEN, 6, BLACK);
-//			}
-//
-//			// Draw seconds line
-//			ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_ALL_DATA_t.Sec), 4, GREEN);
-//			if(QUEUE_ALL_DATA_t.Sec == 0)
-//			{
-//				ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
-//			}
-//
-//			// Updating blink two points on LCD
-//			if(two_point == true)
-//			{
-//				ILI9341_Draw_Text(":", 135, 1, GREEN, 10, BLACK);
-//				two_point = false;
-//			}
-//			else
-//			{
-//				ILI9341_Draw_Text(" ", 135, 1, GREEN, 10, BLACK);
-//				two_point = true;
-//			}
-//
-//			if(QUEUE_ALL_DATA_t.Sec == 0)
-//			{
-//				// Date
-//				ILI9341_Draw_Text("        ", 10, 86, BLUE, 4, BLACK);
-//				memset(str_buf, 0 , sizeof(str_buf));
-//				sprintf(str_date, "%d", QUEUE_ALL_DATA_t.Date);
-//
-//				strncat(str_date, ".", 1);
-//				sprintf(str_buf, "%d", QUEUE_ALL_DATA_t.Month);
-//				strncat(str_date, str_buf, sizeof(str_buf));
-//				memset(str_buf, 0 , sizeof(str_buf));
-//				sprintf(str_buf, "%d", QUEUE_ALL_DATA_t.Year);
-//				strncat(str_date, ".", 1);
-//				strncat(str_date, str_buf, sizeof(str_buf));
-//				ILI9341_Draw_Text(str_date, 10, 86, BLUE, 4, BLACK);
-//
-//				ILI9341_Draw_Text("           ", 10, 120, BLUE, 2, BLACK);
-//
-//				switch (QUEUE_ALL_DATA_t.DaysOfWeek)
-//				{
-//					case 1:
-//						ILI9341_Draw_Text("MONDAY", 10, 120, BLUE, 2, BLACK);
-//						break;
-//					case 2:
-//						ILI9341_Draw_Text("TUESDAY", 10, 120, BLUE, 2, BLACK);
-//						break;
-//					case 3:
-//						ILI9341_Draw_Text("WEDNESDAY", 10, 120, BLUE, 2, BLACK);
-//						break;
-//					case 4:
-//						ILI9341_Draw_Text("THURSDAY", 10, 120, BLUE, 2, BLACK);
-//						break;
-//					case 5:
-//						ILI9341_Draw_Text("FRIDAY", 10, 120, BLUE, 2, BLACK);
-//						break;
-//					case 6:
-//						ILI9341_Draw_Text("SATURDAY", 10, 120, BLUE, 2, BLACK);
-//						break;
-//					case 7:
-//						ILI9341_Draw_Text("SUNDAY", 10, 120, BLUE, 2, BLACK);
-//						break;
-//				}
-//
-//				sprintf(str_temperature, "%d", QUEUE_ALL_DATA_t.bme280_temperature);
-//				sprintf(str_humidity, "%d", QUEUE_ALL_DATA_t.bme280_humidity);
-//				sprintf(str_preassure, "%d", QUEUE_ALL_DATA_t.bme280_pressure);
-//
-//				char strthp_buf_0[10] = {0};
-//				strncat(strthp_buf_0, "T:", 2);
-//				strncat(strthp_buf_0, str_temperature, sizeof(str_temperature));
-//				strncat(strthp_buf_0, " C", 2);
-//				ILI9341_Draw_Text(strthp_buf_0, 10, 160, YELLOW, 2, BLACK);
-//
-//				char strthp_buf_1[10] = {0};
-//				strncat(strthp_buf_1, "H:", 2);
-//				strncat(strthp_buf_1, str_humidity, sizeof(str_humidity));
-//				strncat(strthp_buf_1, " %", 2);
-//				ILI9341_Draw_Text(strthp_buf_1, 10, 180, YELLOW, 2, BLACK);
-//
-//				char strthp_buf_2[10] = {0};
-//				strncat(strthp_buf_2, "P:", 2);
-//				strncat(strthp_buf_2, str_preassure, sizeof(str_preassure));
-//				strncat(strthp_buf_2, " mmRh", 4);
-//				ILI9341_Draw_Text(strthp_buf_2, 10, 200, YELLOW, 2, BLACK);
-//			}
-//			osDelay(1000);
-//		}
 	}
-
   /* USER CODE END start_LCD_Task */
 }
 
