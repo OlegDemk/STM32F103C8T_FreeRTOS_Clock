@@ -134,7 +134,7 @@ const osThreadAttr_t defaultTask_attributes = {
 osThreadId_t RTC_DS3231_TaskHandle;
 const osThreadAttr_t RTC_DS3231_Task_attributes = {
   .name = "RTC_DS3231_Task",
-  .stack_size = 128 * 4,
+  .stack_size = 300 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for BPE280_Task */
@@ -148,7 +148,7 @@ const osThreadAttr_t BPE280_Task_attributes = {
 osThreadId_t SET_RTS_TASKHandle;
 const osThreadAttr_t SET_RTS_TASK_attributes = {
   .name = "SET_RTS_TASK",
-  .stack_size = 256 * 4,
+  .stack_size = 400 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for UART_USB_Task */
@@ -162,7 +162,7 @@ const osThreadAttr_t UART_USB_Task_attributes = {
 osThreadId_t LCD_TaskHandle;
 const osThreadAttr_t LCD_Task_attributes = {
   .name = "LCD_Task",
-  .stack_size = 300 * 4,
+  .stack_size = 350 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for UARTQueue */
@@ -240,12 +240,22 @@ osSemaphoreId_t set_rts_val_SemHandle;
 const osSemaphoreAttr_t set_rts_val_Sem_attributes = {
   .name = "set_rts_val_Sem"
 };
+/* Definitions for red_data_fron_rtc_Sem */
+osSemaphoreId_t red_data_fron_rtc_SemHandle;
+const osSemaphoreAttr_t red_data_fron_rtc_Sem_attributes = {
+  .name = "red_data_fron_rtc_Sem"
+};
 /* USER CODE BEGIN PV */
 
 
 // -------------------------------------------------------------------------
 HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+	if(GPIO_Pin == INTERUPT_FROM_RTC_Pin)
+	{
+		osSemaphoreRelease(red_data_fron_rtc_SemHandle);						// Lets RTS task read data from ds3231
+	}
+
 	if((GPIO_Pin == KEY_1_Pin) || (GPIO_Pin == KEY_2_Pin) || (GPIO_Pin == KEY_3_Pin) || (GPIO_Pin == KEY_4_Pin))
 	{
 		BaseType_t xHigherPriorityTaskWoken;
@@ -374,7 +384,9 @@ int main(void)
 //  bool bme280p = bmp280.id == BME280_CHIP_ID;
 
 
-
+//  ILI9341_Reset();
+//  	ILI9341_Init();
+//  	ILI9341_Fill_Screen(BLACK);
 
 //  HAL_TIM_Base_Start_IT(&htim1);
 
@@ -396,6 +408,9 @@ int main(void)
 
   /* creation of set_rts_val_Sem */
   set_rts_val_SemHandle = osSemaphoreNew(1, 1, &set_rts_val_Sem_attributes);
+
+  /* creation of red_data_fron_rtc_Sem */
+  red_data_fron_rtc_SemHandle = osSemaphoreNew(1, 1, &red_data_fron_rtc_Sem_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -694,6 +709,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : INTERUPT_FROM_RTC_Pin */
+  GPIO_InitStruct.Pin = INTERUPT_FROM_RTC_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(INTERUPT_FROM_RTC_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pins : KEY_4_Pin KEY_3_Pin KEY_2_Pin KEY_1_Pin */
   GPIO_InitStruct.Pin = KEY_4_Pin|KEY_3_Pin|KEY_2_Pin|KEY_1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
@@ -726,6 +747,9 @@ static void MX_GPIO_Init(void)
 
   HAL_NVIC_SetPriority(EXTI4_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI4_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
@@ -781,6 +805,12 @@ void start_RTC_DS3231_Task(void *argument)
 
 	_RTC time; 	// rtc_queueHandle
 
+	// Turn on interrupt PIN on RTC module every one second
+	uint8_t buff = 0;
+	ReadRegister(14, &buff);
+	buff = buff & 0b11100011;
+	WriteRegister(14, buff);
+
 	for(;;)
 	{
 		if(xQueueReceive(new_rtc_queueHandle , &QUEUE_NEW_RTC_t, 0) == pdTRUE)			// Waiting to new rts time and data
@@ -803,29 +833,53 @@ void start_RTC_DS3231_Task(void *argument)
 		}
 		else																			// If no new data - show current time
 		{
-			if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
+			if (osSemaphoreAcquire(red_data_fron_rtc_SemHandle, 10) == osOK)		// If was interrupt from RTC PIN module
 			{
-				DS3231_GetTime(&time);
-			}
-			osMutexRelease(I2C_MutexHandle);
+				if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
+				{
+					DS3231_GetTime(&time);
+				}
+				osMutexRelease(I2C_MutexHandle);
 
-			// Fill in structure of queue
-			QUEUE_RTC_t.Year = time.Year;
-			QUEUE_RTC_t.Month = time.Month;
-			QUEUE_RTC_t.Date = time.Date;
-			QUEUE_RTC_t.DaysOfWeek = time.DaysOfWeek;
-			QUEUE_RTC_t.Hour = time.Hour;
-			QUEUE_RTC_t.Min = time.Min;
-			QUEUE_RTC_t.Sec = time.Sec;
+				// Fill in structure of queue
+				QUEUE_RTC_t.Year = time.Year;
+				QUEUE_RTC_t.Month = time.Month;
+				QUEUE_RTC_t.Date = time.Date;
+				QUEUE_RTC_t.DaysOfWeek = time.DaysOfWeek;
+				QUEUE_RTC_t.Hour = time.Hour;
+				QUEUE_RTC_t.Min = time.Min;
+				QUEUE_RTC_t.Sec = time.Sec;
 
-			if(xQueueSend(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)					// Send current time over queue
-			{
-				// ERROR
+				if(xQueueSend(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)					// Send current time over queue
+				{
+					// ERROR
+				}
+				// Give semaphore
+				osSemaphoreRelease(LCD_SemHandle);		// Let print time and date on start_LCD_Task
 			}
-			// Give semaphore
-			osSemaphoreRelease(LCD_SemHandle);		// Let print time and date on start_LCD_Task
+//			if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
+//			{
+//				DS3231_GetTime(&time);
+//			}
+//			osMutexRelease(I2C_MutexHandle);
+//
+//			// Fill in structure of queue
+//			QUEUE_RTC_t.Year = time.Year;
+//			QUEUE_RTC_t.Month = time.Month;
+//			QUEUE_RTC_t.Date = time.Date;
+//			QUEUE_RTC_t.DaysOfWeek = time.DaysOfWeek;
+//			QUEUE_RTC_t.Hour = time.Hour;
+//			QUEUE_RTC_t.Min = time.Min;
+//			QUEUE_RTC_t.Sec = time.Sec;
+//
+//			if(xQueueSend(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)					// Send current time over queue
+//			{
+//				// ERROR
+//			}
+//			// Give semaphore
+//			osSemaphoreRelease(LCD_SemHandle);		// Let print time and date on start_LCD_Task
 		}
-		osDelay(1000);		// ПОГАНО !!!!! Використати переривання від модуля RTS як синхронізацію
+//		osDelay(1000);		// ПОГАНО !!!!! Використати переривання від модуля RTS як синхронізацію
 		// Тобюто, якщо наідйшло переривання то зчитати дані і заповнити чергу і відіслати семафор
 
 	}
@@ -1367,8 +1421,6 @@ void start_LCD_Task(void *argument)
 				//QUEUE_RTC_VAL_t.new_value = QUEUE_RTC_VAL_t.new_value + 48;
 				ILI9341_Draw_Text(QUEUE_RTC_VAL_t.name, 10, 100, YELLOW, 2, BLACK);
 				ILI9341_Draw_Text(buf, 200, 100, YELLOW, 2, BLACK);
-
-				int gggg = 999;
 
 			}
 
