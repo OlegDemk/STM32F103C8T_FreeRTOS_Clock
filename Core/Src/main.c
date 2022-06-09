@@ -34,6 +34,10 @@
 #include "stdlib.h"
 #include "queue.h"
 
+
+#include <stdio.h>
+#include <string.h>
+
 /////// For task management
 volatile unsigned long ulHighFreqebcyTimerTicks;		// This variable using for calculate how many time all tasks was running.
 char str_management_memory_str[1000] = {0};
@@ -86,6 +90,12 @@ typedef struct
 
 bool print_first_time_on_lcd_flag = true;
 
+typedef struct
+{
+	int new_value;
+	char name[20];
+}QUEUE_RTC_VAL;
+
 
 /* USER CODE END Includes */
 
@@ -124,14 +134,14 @@ const osThreadAttr_t defaultTask_attributes = {
 osThreadId_t RTC_DS3231_TaskHandle;
 const osThreadAttr_t RTC_DS3231_Task_attributes = {
   .name = "RTC_DS3231_Task",
-  .stack_size = 256 * 4,
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for BPE280_Task */
 osThreadId_t BPE280_TaskHandle;
 const osThreadAttr_t BPE280_Task_attributes = {
   .name = "BPE280_Task",
-  .stack_size = 256 * 4,
+  .stack_size = 200 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for SET_RTS_TASK */
@@ -204,12 +214,12 @@ const osMessageQueueAttr_t new_rtc_queue_attributes = {
   .mq_mem = &new_rtc_queueBuffer,
   .mq_size = sizeof(new_rtc_queueBuffer)
 };
-/* Definitions for nev_val_queue */
-osMessageQueueId_t nev_val_queueHandle;
-uint8_t nev_val_queueBuffer[ 2 * sizeof( uint8_t ) ];
+/* Definitions for QUEUE_RTC_VAL */
+osMessageQueueId_t QUEUE_RTC_VALHandle;
+uint8_t nev_val_queueBuffer[ 2 * sizeof( QUEUE_RTC_VAL ) ];
 osStaticMessageQDef_t nev_val_queueControlBlock;
-const osMessageQueueAttr_t nev_val_queue_attributes = {
-  .name = "nev_val_queue",
+const osMessageQueueAttr_t QUEUE_RTC_VAL_attributes = {
+  .name = "QUEUE_RTC_VAL",
   .cb_mem = &nev_val_queueControlBlock,
   .cb_size = sizeof(nev_val_queueControlBlock),
   .mq_mem = &nev_val_queueBuffer,
@@ -224,6 +234,11 @@ const osMutexAttr_t I2C_Mutex_attributes = {
 osSemaphoreId_t LCD_SemHandle;
 const osSemaphoreAttr_t LCD_Sem_attributes = {
   .name = "LCD_Sem"
+};
+/* Definitions for set_rts_val_Sem */
+osSemaphoreId_t set_rts_val_SemHandle;
+const osSemaphoreAttr_t set_rts_val_Sem_attributes = {
+  .name = "set_rts_val_Sem"
 };
 /* USER CODE BEGIN PV */
 
@@ -258,7 +273,7 @@ HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 			}
 			else if(HAL_GPIO_ReadPin(GPIOA, KEY_3_Pin) == GPIO_PIN_SET)
 			{
-				if((xQueueSendFromISR( buttonQueueHandle, &key_2, &xHigherPriorityTaskWoken )) != 1)
+				if((xQueueSendFromISR( buttonQueueHandle, &key_3, &xHigherPriorityTaskWoken )) != 1)
 				{
 					// Error
 				}
@@ -271,6 +286,8 @@ HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 				}
 			}
 			previousMillis = currentMillis;
+			// Set semaphore
+			osSemaphoreRelease(set_rts_val_SemHandle);
 		}
 	}
 }
@@ -377,6 +394,9 @@ int main(void)
   /* creation of LCD_Sem */
   LCD_SemHandle = osSemaphoreNew(1, 1, &LCD_Sem_attributes);
 
+  /* creation of set_rts_val_Sem */
+  set_rts_val_SemHandle = osSemaphoreNew(1, 1, &set_rts_val_Sem_attributes);
+
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
@@ -401,8 +421,8 @@ int main(void)
   /* creation of new_rtc_queue */
   new_rtc_queueHandle = osMessageQueueNew (2, sizeof(QUEUE_NEW_RTC), &new_rtc_queue_attributes);
 
-  /* creation of nev_val_queue */
-  nev_val_queueHandle = osMessageQueueNew (2, sizeof(uint8_t), &nev_val_queue_attributes);
+  /* creation of QUEUE_RTC_VAL */
+  QUEUE_RTC_VALHandle = osMessageQueueNew (2, sizeof(QUEUE_RTC_VAL), &QUEUE_RTC_VAL_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -724,11 +744,24 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
-  for(;;)
-  {
+
+	typedef struct
+	{
+		char buf[10];
+		uint8_t fff;
+	}test_struct;
+
+	test_struct test_struct_t;
+	for(;;)
+	{
+		strcat(test_struct_t.buf, "HELLO");   //doesn't work
+
+
+		test_struct_t.fff = 99;
+
 
 	  osDelay(1000);
-  }
+	}
   /* USER CODE END 5 */
 }
 
@@ -794,7 +827,7 @@ void start_RTC_DS3231_Task(void *argument)
 		}
 		osDelay(1000);		// ПОГАНО !!!!! Використати переривання від модуля RTS як синхронізацію
 		// Тобюто, якщо наідйшло переривання то зчитати дані і заповнити чергу і відіслати семафор
-ііі
+
 	}
   /* USER CODE END start_RTC_DS3231_Task */
 }
@@ -878,130 +911,304 @@ void start_SET_RTS_TASK(void *argument)
 
 	QUEUE_RTC QUEUE_RTC_t;
 	QUEUE_NEW_RTC QUEUE_NEW_RTC_t;
+	QUEUE_RTC_VAL QUEUE_RTC_VAL_t;
 
-  for(;;)
-  {
+	for(;;)
+	{
+		uint16_t pressed_key, status_queue = 0;
 
+		if(osSemaphoreAcquire(set_rts_val_SemHandle, 10) == osOK)					// Waiting on the press any button
+		{
+			if (xQueueReceive( buttonQueueHandle , &pressed_key, 0 ) == pdTRUE)		// Read witch button was pressed
+			{
+				static int8_t setet_type = 1;
+				static int8_t yaer = 1;
+				static int8_t month = 1;
+				static int8_t date = 1;
+				static int8_t day_of_week = 1;
+				static int8_t hour = 1;
+				static int8_t minute = 1;
+				static int8_t second = 1;
 
-	  uint16_t pressed_key, status_queue = 0;
-	  status_queue = xQueueReceive( buttonQueueHandle , &pressed_key, 0 );
-	  if (status_queue == pdTRUE)
-	  {
-		  if(pressed_key == 1)
-		  {
-				QUEUE_NEW_RTC_t.Year = 11;
-				QUEUE_NEW_RTC_t.Month = 11;
-				QUEUE_NEW_RTC_t.Date = 11;
-				QUEUE_NEW_RTC_t.DaysOfWeek = 11;
-				QUEUE_NEW_RTC_t.Hour = 11;
-				QUEUE_NEW_RTC_t.Min = 11;
-				QUEUE_NEW_RTC_t.Sec = 11;
+				osThreadSuspend(RTC_DS3231_TaskHandle);								// Stop task, and stop print RTC data on LCD
+				osThreadSuspend(BPE280_TaskHandle);									// Stop task, and stop print BME280 data on LCD
 
-				if(xQueueSend(new_rtc_queueHandle, &QUEUE_NEW_RTC_t, 0) != pdPASS)
+				QUEUE_RTC_VAL_t.new_value = 0;
+				memset(QUEUE_RTC_VAL_t.name, 0, sizeof(QUEUE_RTC_VAL_t.name));
+
+				switch (setet_type)
 				{
-					// ERROR
-				}
+					case 1:
+						// set years
+						memset(QUEUE_RTC_VAL_t.name , 0, sizeof(QUEUE_RTC_VAL_t.name));
+						strcat(QUEUE_RTC_VAL_t.name, "Year: ");			// Set the setings value
 
-				print_first_time_on_lcd_flag = true;
+						if(pressed_key == 2)
+						{
+							yaer--;
+							if(yaer < 0)
+							{
+								yaer = 99;
+							}
+						}
+
+						if(pressed_key == 3)
+						{
+							yaer++;
+							if(yaer > 99)
+							{
+								yaer = 0;
+							}
+						}
+
+						QUEUE_RTC_VAL_t.new_value = yaer;
+
+						xQueueSend(QUEUE_RTC_VALHandle, &QUEUE_RTC_VAL_t, 0);		// Save new value on LCD
+						osSemaphoreRelease(LCD_SemHandle);							// Let show new value on LCD
+
+						if(pressed_key == 4)		// Save data
+						{
+							QUEUE_NEW_RTC_t.Year = QUEUE_RTC_VAL_t.new_value;		// Save new selected value in queue for rts
+							setet_type++;											// Go to next case
+							QUEUE_RTC_VAL_t.new_value = 1;							// init next value
+						}
+						break;
+
+					case 2:
+						// set month
+						memset(QUEUE_RTC_VAL_t.name , 0, sizeof(QUEUE_RTC_VAL_t.name));
+						strcat(QUEUE_RTC_VAL_t.name, "Month: ");			// Set the setings value
+
+						if(pressed_key == 2)
+						{
+							month--;
+							if(month < 1)
+							{
+								month = 12;
+							}
+						}
+
+						if(pressed_key == 3)
+						{
+							month++;
+							if(month > 12)
+							{
+								month = 1;
+							}
+						}
+
+						QUEUE_RTC_VAL_t.new_value = month;
+
+						xQueueSend(QUEUE_RTC_VALHandle, &QUEUE_RTC_VAL_t, 0);
+						osSemaphoreRelease(LCD_SemHandle);
+
+						if(pressed_key == 4)		// Save data
+						{
+							QUEUE_NEW_RTC_t.Month = QUEUE_RTC_VAL_t.new_value;
+							setet_type++;
+							QUEUE_RTC_VAL_t.new_value = 1;
+						}
+						break;
+
+					case 3:
+						// set Date
+						memset(QUEUE_RTC_VAL_t.name , 0, sizeof(QUEUE_RTC_VAL_t.name));
+						strcat(QUEUE_RTC_VAL_t.name, "Date: ");			// Set the setings value
+
+						if(pressed_key == 2)
+						{
+							date--;
+							if(date < 1)
+							{
+								date = 31;
+							}
+						}
+
+						if(pressed_key == 3)
+						{
+							date++;
+							if(date > 31)
+							{
+								date = 1;
+							}
+						}
+
+						QUEUE_RTC_VAL_t.new_value = date;
+
+						xQueueSend(QUEUE_RTC_VALHandle, &QUEUE_RTC_VAL_t, 0);
+						osSemaphoreRelease(LCD_SemHandle);
+
+						if(pressed_key == 4)		// Save data
+						{
+							QUEUE_NEW_RTC_t.Date = QUEUE_RTC_VAL_t.new_value;
+							setet_type++;
+							QUEUE_RTC_VAL_t.new_value = 1;
+						}
+						break;
+
+					case 4:
+						// set DaysOfWeek
+						memset(QUEUE_RTC_VAL_t.name , 0, sizeof(QUEUE_RTC_VAL_t.name));
+						strcat(QUEUE_RTC_VAL_t.name, "Day of week: ");			// Set the setings value
+
+						if(pressed_key == 2)
+						{
+							day_of_week--;
+							if(day_of_week < 1)
+							{
+								day_of_week = 7;
+							}
+						}
+
+						if(pressed_key == 3)
+						{
+							day_of_week++;
+							if(day_of_week > 7)
+							{
+								day_of_week = 1;
+							}
+						}
+
+						QUEUE_RTC_VAL_t.new_value = day_of_week;
+
+						xQueueSend(QUEUE_RTC_VALHandle, &QUEUE_RTC_VAL_t, 0);
+						osSemaphoreRelease(LCD_SemHandle);
+
+						if(pressed_key == 4)		// Save data
+						{
+							QUEUE_NEW_RTC_t.DaysOfWeek = QUEUE_RTC_VAL_t.new_value;
+							setet_type++;
+							QUEUE_RTC_VAL_t.new_value = 1;
+						}
+						break;
+
+					case 5:
+						// set Hour
+						memset(QUEUE_RTC_VAL_t.name , 0, sizeof(QUEUE_RTC_VAL_t.name));
+						strcat(QUEUE_RTC_VAL_t.name, "Hour: ");			// Set the setings value
+
+						if(pressed_key == 2)
+						{
+							hour--;
+
+							if(hour < 0)
+							{
+								hour = 24;
+							}
+						}
+
+						if(pressed_key == 3)
+						{
+							hour++;
+							if(hour > 24)
+							{
+								hour = 0;
+							}
+						}
+
+						QUEUE_RTC_VAL_t.new_value = hour;
+
+						xQueueSend(QUEUE_RTC_VALHandle, &QUEUE_RTC_VAL_t, 0);
+						osSemaphoreRelease(LCD_SemHandle);
+
+						if(pressed_key == 4)		// Save data
+						{
+							QUEUE_NEW_RTC_t.Hour = QUEUE_RTC_VAL_t.new_value;
+							setet_type++;
+							QUEUE_RTC_VAL_t.new_value = 1;
+						}
+						break;
+
+					case 6:
+						// set Minutes
+						memset(QUEUE_RTC_VAL_t.name , 0, sizeof(QUEUE_RTC_VAL_t.name));
+						strcat(QUEUE_RTC_VAL_t.name, "Minute: ");			// Set the setings value
+
+						if(pressed_key == 2)
+						{
+							minute--;
+							if(minute < 0)
+							{
+								minute = 59;
+							}
+						}
+
+						if(pressed_key == 3)
+						{
+							minute++;
+							if(minute > 59)
+							{
+								minute = 0;
+							}
+						}
+
+						QUEUE_RTC_VAL_t.new_value = minute;
+
+						xQueueSend(QUEUE_RTC_VALHandle, &QUEUE_RTC_VAL_t, 0);
+						osSemaphoreRelease(LCD_SemHandle);
+
+						if(pressed_key == 4)		// Save data
+						{
+							QUEUE_NEW_RTC_t.Min = QUEUE_RTC_VAL_t.new_value;
+							setet_type++;
+							QUEUE_RTC_VAL_t.new_value = 1;
+						}
+						break;
+
+
+					case 7:
+						// set Seconds
+						memset(QUEUE_RTC_VAL_t.name , 0, sizeof(QUEUE_RTC_VAL_t.name));
+						strcat(QUEUE_RTC_VAL_t.name, "Second: ");			// Set the setings value
+
+						if(pressed_key == 2)
+						{
+							second--;
+							if(second < 0)
+							{
+								second = 59;
+							}
+						}
+
+						if(pressed_key == 3)
+						{
+							second++;
+							if(second > 59)
+							{
+								second = 0;
+							}
+						}
+
+						QUEUE_RTC_VAL_t.new_value = second;
+
+						xQueueSend(QUEUE_RTC_VALHandle, &QUEUE_RTC_VAL_t, 0);
+						osSemaphoreRelease(LCD_SemHandle);
+
+						if(pressed_key == 4)		// Save data
+						{
+							QUEUE_NEW_RTC_t.Sec = QUEUE_RTC_VAL_t.new_value;
+							setet_type++;
+							QUEUE_RTC_VAL_t.new_value = 1;
+						}
+						break;
+
+					case 8:
+						//ILI9341_Fill_Screen(BLACK);								// Claan LCD
+						xQueueSend(new_rtc_queueHandle, &QUEUE_NEW_RTC_t, 0);		// Send new time and data to rtc task
+
+						osThreadResume(RTC_DS3231_TaskHandle);					// Start RTS task
+						osThreadResume(BPE280_TaskHandle);						// Start BME280 tasl
+
+						print_first_time_on_lcd_flag = true;						// Print new time and data on LCD
+
+						setet_type++;												// Exit from switch
+
+
+						break;
+				}
+				osDelay(200);
 		  }
 	  }
-	  osDelay(1000);
-
-
-//		// Waiting press the any button
-//			uint16_t pressed_key, status_queue = 0;
-//			status_queue = xQueueReceive( buttonQueueHandle , &pressed_key, 0 );
-//			if (status_queue == pdTRUE)
-//			{
-//				if(pressed_key == 1)
-//				{
-//					// 1. Stop RTC task
-//					osThreadSuspend(RTC_DS3231_TaskHandle);
-//					osThreadSuspend(BPE280_TaskHandle);
-//
-//		//			uint8_t seconds = 0;
-//		//			uint8_t minutes = 0;
-//		//			uint8_t hours = 0;
-//
-//
-//					uint8_t new_year = 0;
-//					uint8_t i = 0;
-//
-//					do{
-//						if(pressed_key == 2)
-//						{
-//	//						if(i == 0)
-//	//						{
-//								new_year--;
-//
-//	//						}
-//								pressed_key = 0;
-//						}
-//						if(pressed_key == 3)
-//						{
-//	//						if(i == 0)
-//	//						{
-//								new_year++;
-//	//						}
-//								pressed_key = 0;
-//						}
-//
-//						// Sent queue into LCD task ()
-//						if(xQueueSend(nev_val_queueHandle, &new_year, 0) != pdPASS)
-//						{
-//
-//						}
-//
-//
-//						if(pressed_key == 4)		// Save new data into struct
-//						{
-//							//UEUE_NEW_RTC_t.
-//							i++;
-//						}
-//
-//						xQueueReceive( buttonQueueHandle , &pressed_key, 0 );
-//					}while(i <= 7);
-//				}
-//
-//
-//				// Send global new time and data into RTC tssk
-//
-//
-//
-//
-//				osThreadResume(RTC_DS3231_TaskHandle);
-//				osThreadResume(BPE280_TaskHandle);
-//
-//
-//
-//				if(pressed_key == 1)
-//				{
-//					HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-//				}
-//				else if(pressed_key == 2)
-//				{
-//					HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-//				}
-//				else if(pressed_key == 3)
-//				{
-//					HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-//				}
-//				else if(pressed_key == 4)
-//				{
-//					HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-//				}
-//				//HAL_GPIO_TogglePin(GPIOC, LED_Pin);
-//
-//				// 2. Send new time qwer queue into rtc task
-//
-//
-//			}
-
-
-
-
-
-
   }
   /* USER CODE END start_SET_RTS_TASK */
 }
@@ -1099,6 +1306,7 @@ void start_LCD_Task(void *argument)
 
 	QUEUE_BME280 QUEUE_BME280_t;
 	QUEUE_RTC QUEUE_RTC_t;
+	QUEUE_RTC_VAL QUEUE_RTC_VAL_t;
 
 	char str_hour[4] = {0};
 	char str_minute[4] = {0};
@@ -1146,11 +1354,27 @@ void start_LCD_Task(void *argument)
 		osStatus_t status = osSemaphoreAcquire(LCD_SemHandle, 10);
 		if(status == 0)
 		{
-		// If data from BME280 is ready print T, H and  P
-		// Waiting semaphore from
-//		osStatus_t status = osSemaphoreAcquire(print_THPSemHandle, 0);
-//		if(status == 0)
-//		{
+			// If new time/data is selecting
+			if((xQueueReceive(QUEUE_RTC_VALHandle , &QUEUE_RTC_VAL_t, 0)) == pdTRUE)
+			{
+				ILI9341_Fill_Screen(BLACK);
+
+				char buf[6] = {0};
+
+				// Convert QUEUE_RTC_VAL_t.new_value into strint
+				//itoa(QUEUE_RTC_VAL_t.new_value, buf, 10);
+				sprintf(buf, "%d", QUEUE_RTC_VAL_t.new_value);
+				//QUEUE_RTC_VAL_t.new_value = QUEUE_RTC_VAL_t.new_value + 48;
+				ILI9341_Draw_Text(QUEUE_RTC_VAL_t.name, 10, 100, YELLOW, 2, BLACK);
+				ILI9341_Draw_Text(buf, 200, 100, YELLOW, 2, BLACK);
+
+				int gggg = 999;
+
+			}
+
+
+			// If data from BME280 is ready print T, H and  P
+			// Waiting queue from start_BPE280_Task
 			if((xQueueReceive(THPQueueHandle, &QUEUE_BME280_t, 0)) == pdTRUE)
 			{
 				// Print T, H and  P on LCD
@@ -1180,18 +1404,19 @@ void start_LCD_Task(void *argument)
 				strncat(strthp_buf_p, " mmRh", 4);
 				ILI9341_Draw_Text(strthp_buf_p, 10, 200, YELLOW, 2, BLACK);
 			}
-//		}
 
 
-		// If data from RTC  is ready print it
-//		status = 99;
-//		status = osSemaphoreAcquire(print_RTCSemHandle, 0);
-//		if(status == 0)
-//		{
+
+			// If data from start_RTC_DS3231_
+			// Waiting queue from start_RTC_DS3231_Task
 			if((xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdPASS))
 			{
 				if((print_first_time_on_lcd_flag == true) )				// If print data firsttime
 				{
+//					ILI9341_Fill_Screen(BLACK);
+//
+//					ILI9341_Draw_Hollow_Rectangle_Coord(0, 0, 319, 150, BLUE);
+
 					sprintf(str_hour, "%d", QUEUE_RTC_t.Hour);
 					sprintf(str_minute, "%d", QUEUE_RTC_t.Min);
 					sprintf(str_msecond, "%d", QUEUE_RTC_t.Sec);
