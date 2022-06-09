@@ -165,6 +165,13 @@ const osThreadAttr_t LCD_Task_attributes = {
   .stack_size = 350 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for NRF24L01_Task */
+osThreadId_t NRF24L01_TaskHandle;
+const osThreadAttr_t NRF24L01_Task_attributes = {
+  .name = "NRF24L01_Task",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* Definitions for UARTQueue */
 osMessageQueueId_t UARTQueueHandle;
 uint8_t UARTQueueBuffer[ 2 * sizeof( QUEUE_t ) ];
@@ -319,6 +326,7 @@ void start_BPE280_Task(void *argument);
 void start_SET_RTS_TASK(void *argument);
 void start_UART_USB_Task(void *argument);
 void start_LCD_Task(void *argument);
+void Start_NRF24L01(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -461,6 +469,9 @@ int main(void)
 
   /* creation of LCD_Task */
   LCD_TaskHandle = osThreadNew(start_LCD_Task, NULL, &LCD_Task_attributes);
+
+  /* creation of NRF24L01_Task */
+  NRF24L01_TaskHandle = osThreadNew(Start_NRF24L01, NULL, &NRF24L01_Task_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
 
@@ -769,21 +780,8 @@ void StartDefaultTask(void *argument)
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
 
-	typedef struct
-	{
-		char buf[10];
-		uint8_t fff;
-	}test_struct;
-
-	test_struct test_struct_t;
 	for(;;)
 	{
-		strcat(test_struct_t.buf, "HELLO");   //doesn't work
-
-
-		test_struct_t.fff = 99;
-
-
 	  osDelay(1000);
 	}
   /* USER CODE END 5 */
@@ -802,9 +800,9 @@ void start_RTC_DS3231_Task(void *argument)
   /* Infinite loop */
 	QUEUE_RTC QUEUE_RTC_t;
 	QUEUE_NEW_RTC QUEUE_NEW_RTC_t;
+	_RTC time; 							// rtc_queueHandle
 
-	_RTC time; 	// rtc_queueHandle
-
+	// Init DS3231 RTC module
 	// Turn on interrupt PIN on RTC module every one second
 	uint8_t buff = 0;
 	ReadRegister(14, &buff);
@@ -857,30 +855,7 @@ void start_RTC_DS3231_Task(void *argument)
 				// Give semaphore
 				osSemaphoreRelease(LCD_SemHandle);		// Let print time and date on start_LCD_Task
 			}
-//			if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
-//			{
-//				DS3231_GetTime(&time);
-//			}
-//			osMutexRelease(I2C_MutexHandle);
-//
-//			// Fill in structure of queue
-//			QUEUE_RTC_t.Year = time.Year;
-//			QUEUE_RTC_t.Month = time.Month;
-//			QUEUE_RTC_t.Date = time.Date;
-//			QUEUE_RTC_t.DaysOfWeek = time.DaysOfWeek;
-//			QUEUE_RTC_t.Hour = time.Hour;
-//			QUEUE_RTC_t.Min = time.Min;
-//			QUEUE_RTC_t.Sec = time.Sec;
-//
-//			if(xQueueSend(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)					// Send current time over queue
-//			{
-//				// ERROR
-//			}
-//			// Give semaphore
-//			osSemaphoreRelease(LCD_SemHandle);		// Let print time and date on start_LCD_Task
 		}
-//		osDelay(1000);		// ПОГАНО !!!!! Використати переривання від модуля RTS як синхронізацію
-		// Тобюто, якщо наідйшло переривання то зчитати дані і заповнити чергу і відіслати семафор
 
 	}
   /* USER CODE END start_RTC_DS3231_Task */
@@ -897,7 +872,6 @@ void start_BPE280_Task(void *argument)
 {
   /* USER CODE BEGIN start_BPE280_Task */
   /* Infinite loop */
-	//QUEUE_BME280 QUEUE_BME280_t;
 
 	QUEUE_BME280 QUEUE_BME280_t;
 	BMP280_HandleTypedef bmp280;
@@ -1705,6 +1679,28 @@ void start_LCD_Task(void *argument)
 
 	}
   /* USER CODE END start_LCD_Task */
+}
+
+/* USER CODE BEGIN Header_Start_NRF24L01 */
+/**
+* @brief Function implementing the NRF24L01_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_Start_NRF24L01 */
+void Start_NRF24L01(void *argument)
+{
+  /* USER CODE BEGIN Start_NRF24L01 */
+  /* Infinite loop */
+	int ggg = 0;
+
+  for(;;)
+  {
+
+	  ggg ++;
+    osDelay(100);
+  }
+  /* USER CODE END Start_NRF24L01 */
 }
 
 /**
