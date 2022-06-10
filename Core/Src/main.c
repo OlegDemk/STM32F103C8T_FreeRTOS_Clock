@@ -40,6 +40,7 @@
 #include <string.h>
 
 /////// For task management
+<<<<<<< HEAD
 //volatile unsigned long ulHighFreqebcyTimerTicks;		// This variable using for calculate how many time all tasks was running.
 //char str_management_memory_str[500] = {0};
 //int freemem = 0;
@@ -49,6 +50,17 @@
 //{
 //	char Buf[612];
 //}QUEUE_t;
+=======
+volatile unsigned long ulHighFreqebcyTimerTicks;		// This variable using for calculate how many time all tasks was running.
+char str_management_memory_str[500] = {0};
+int freemem = 0;
+uint32_t tim_val = 0;
+
+typedef struct 							// Queue for UARD
+{
+	char Buf[612];
+}QUEUE_t;
+>>>>>>> e9380fc... optimisation RAM=)
 ////////////////////////////
 
 typedef struct
@@ -1191,6 +1203,86 @@ void start_SET_RTS_TASK(void *argument)
   /* USER CODE END start_SET_RTS_TASK */
 }
 
+<<<<<<< HEAD
+=======
+/* USER CODE BEGIN Header_start_UART_USB_Task */
+/**
+* @brief Function implementing the UART_USB_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_start_UART_USB_Task */
+void start_UART_USB_Task(void *argument)
+{
+  /* USER CODE BEGIN start_UART_USB_Task */
+  /* Infinite loop */
+  for(;;)
+  {
+	  char str_end_of_line[3] = {'\r','\n'};
+	  char str_sig = '-';
+	  char buff[10] = {0};
+
+	  QUEUE_t msg;												// Make a queue
+	  memset(msg.Buf, 0, sizeof(msg.Buf));						// Fill in buff '\0'
+	  strcat(msg.Buf, ">>>>> Free heap memory: ");				// Add string to another (Total heap)
+
+	  freemem = xPortGetFreeHeapSize();							// Function return how many free memory.
+	  itoa(freemem, buff, 10);
+	  strcat(msg.Buf, buff);
+	  strcat(msg.Buf, str_end_of_line);
+
+	  // add a hat
+	  strcat(msg.Buf, "| TASK NAME  | STATUS | PRIOR | STACK | NUM |\n\r\0");
+
+	  vTaskList(str_management_memory_str);						// Fill in str_management_memory_str array management task information
+
+	  // Finding the  end of string
+	  uint16_t buffer_size = 0;
+	  while(msg.Buf[buffer_size] != '\0')
+	  {
+		  buffer_size ++;
+	  }
+
+	  // Add str_management_memory_str to queue string
+	  int i = 0;
+	  for(i = 0; str_management_memory_str[i] != '\0'; i++)
+	  {
+		  // add data to queue
+		  msg.Buf[buffer_size + i] = str_management_memory_str[i];
+	  }
+
+	  // add a hat
+	  char str_line[] = {"-----------------------\n\r"};
+	  char str_head_2[] = {"| TASK NAME | ABS TIME | TASK TIME% |\n\r"};
+	  strcat(msg.Buf, str_line);
+	  strcat(msg.Buf, str_head_2);
+
+	  memset(str_management_memory_str, 0, sizeof(str_management_memory_str));	// Clean buffer
+
+	  vTaskGetRunTimeStats(str_management_memory_str);							// Function return how much time all functions running.
+
+	  buffer_size = buffer_size + i + (sizeof(str_line)-1) + (sizeof(str_head_2)-1);
+	  for(i = 0; str_management_memory_str[i] != '\0'; i++)
+	  {
+		  // add data to queue
+		  msg.Buf[buffer_size + i] = str_management_memory_str[i];
+	  }
+	  //strcat(msg.Buf, "#########################################\n\r");
+
+	  buffer_size = 0;
+	  while(msg.Buf[buffer_size] != '\0')
+	  {
+		  buffer_size ++;
+	  }
+	  // Transmit over virtual comport
+	  HAL_UART_Transmit_IT( &huart1, msg.Buf, buffer_size);
+
+	  osDelay(3000);
+  }
+  /* USER CODE END start_UART_USB_Task */
+}
+
+>>>>>>> e9380fc... optimisation RAM=)
 /* USER CODE BEGIN Header_start_LCD_Task */
 /**
 * @brief Function implementing the LCD_Task thread.

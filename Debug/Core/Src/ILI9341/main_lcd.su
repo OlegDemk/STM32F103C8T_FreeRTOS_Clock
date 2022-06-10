@@ -1,0 +1,2 @@
+../Core/Src/ILI9341/main_lcd.c:26:6:speed_test	32	static
+../Core/Src/ILI9341/main_lcd.c:68:6:speed_test_print_string	8	static
