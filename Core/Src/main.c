@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "ILI9341/ILI9341_STM32_Driver.h"
 #include "ILI9341/ILI9341_GFX.h"
+#include "ILI9341/snow_tiger.h"
 
 #include "ds3231/ds3231.h"
 
@@ -40,26 +41,22 @@
 
 /////// For task management
 volatile unsigned long ulHighFreqebcyTimerTicks;		// This variable using for calculate how many time all tasks was running.
-char str_management_memory_str[1000] = {0};
+char str_management_memory_str[500] = {0};
 int freemem = 0;
 uint32_t tim_val = 0;
 
 typedef struct 							// Queue for UARD
 {
-	char Buf[1024];
+	char Buf[612];
 }QUEUE_t;
 ////////////////////////////
-//BMP280_HandleTypedef bmp280;
-//float pressure, temperature, humidity;
-//uint16_t size;
-//uint8_t Data[256];
+
 typedef struct
 {
 	float pressure;
 	float temperature;
 	float humidity;
 }QUEUE_BME280;
-
 
 // For button debounce
 uint32_t previousMillis = 0;
@@ -190,7 +187,7 @@ const osMessageQueueAttr_t buttonQueue_attributes = {
 };
 /* Definitions for THPQueue */
 osMessageQueueId_t THPQueueHandle;
-uint8_t THPQueueBuffer[ 3 * sizeof( QUEUE_BME280 ) ];
+uint8_t THPQueueBuffer[ 2 * sizeof( QUEUE_BME280 ) ];
 osStaticMessageQDef_t THPQueueControlBlock;
 const osMessageQueueAttr_t THPQueue_attributes = {
   .name = "THPQueue",
@@ -371,32 +368,8 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
-  // Init LCD
-//  ILI9341_SPI_Init();
-//  ILI9341_Init();
-//  ILI9341_Enable();
-//  ILI9341_Fill_Screen(BLACK);
 
-  // DC3231 init
   DS3231_Init(&hi2c1);
-
-//  // Init BME280
-//  bmp280_init_default_params(&bmp280.params);
-//  bmp280.addr = BMP280_I2C_ADDRESS_0;
-//  bmp280.i2c = &hi2c1;
-//  if(bmp280_init(&bmp280, &bmp280.params) != true)
-//  {
-//	  // error
-//	  while(1){}
-//  }
-//  bool bme280p = bmp280.id == BME280_CHIP_ID;
-
-
-//  ILI9341_Reset();
-//  	ILI9341_Init();
-//  	ILI9341_Fill_Screen(BLACK);
-
-//  HAL_TIM_Base_Start_IT(&htim1);
 
   /* USER CODE END 2 */
 
@@ -433,10 +406,10 @@ int main(void)
   UARTQueueHandle = osMessageQueueNew (2, sizeof(QUEUE_t), &UARTQueue_attributes);
 
   /* creation of buttonQueue */
-  buttonQueueHandle = osMessageQueueNew (5, sizeof(uint16_t), &buttonQueue_attributes);
+  buttonQueueHandle = osMessageQueueNew (2, sizeof(uint16_t), &buttonQueue_attributes);
 
   /* creation of THPQueue */
-  THPQueueHandle = osMessageQueueNew (3, sizeof(QUEUE_BME280), &THPQueue_attributes);
+  THPQueueHandle = osMessageQueueNew (2, sizeof(QUEUE_BME280), &THPQueue_attributes);
 
   /* creation of rtc_queue */
   rtc_queueHandle = osMessageQueueNew (2, sizeof(QUEUE_RTC), &rtc_queue_attributes);
@@ -873,6 +846,8 @@ void start_BPE280_Task(void *argument)
   /* USER CODE BEGIN start_BPE280_Task */
   /* Infinite loop */
 
+	// ДОПИСУВАТИ РОБОТУ З НРФ МОДУЛЕМ В ЦІЙ ТАСЦІ !!!
+
 	QUEUE_BME280 QUEUE_BME280_t;
 	BMP280_HandleTypedef bmp280;
 	float pressure, temperature, humidity;
@@ -1303,7 +1278,7 @@ void start_UART_USB_Task(void *argument)
 		  // add data to queue
 		  msg.Buf[buffer_size + i] = str_management_memory_str[i];
 	  }
-	  strcat(msg.Buf, "#########################################\n\r");
+	  //strcat(msg.Buf, "#########################################\n\r");
 
 	  buffer_size = 0;
 	  while(msg.Buf[buffer_size] != '\0')
@@ -1329,9 +1304,6 @@ void start_LCD_Task(void *argument)
 {
   /* USER CODE BEGIN start_LCD_Task */
   /* Infinite loop */
-	//QUEUE_ALL_DATA QUEUE_ALL_DATA_t; 		// Global data queue for send to LCD task (to print)
-
-
 	QUEUE_BME280 QUEUE_BME280_t;
 	QUEUE_RTC QUEUE_RTC_t;
 	QUEUE_RTC_VAL QUEUE_RTC_VAL_t;
@@ -1344,11 +1316,12 @@ void start_LCD_Task(void *argument)
 	char str_time_buf[10] = {0};
 
 	bool two_point = true;
-//	static bool print_first_time_on_lcd_flag = true;
 
 	ILI9341_Reset();
 	ILI9341_Init();
 	ILI9341_Fill_Screen(BLACK);
+
+	//ILI9341_Draw_Image(snow_tiger, SCREEN_HORIZONTAL_2);
 
 	osDelay(1000);
 
@@ -1358,41 +1331,15 @@ void start_LCD_Task(void *argument)
 	for(;;)
 	{
 
-//		if(eet RTC mode)
-//		{
-//			1. Clear time and data LCD part.
-//			2. show selected value.
-//		}
-
-//		uint8_t new_rtc_vvvv = 0;
-//		if(xQueueReceive(nev_val_queueHandle, &new_rtc_vvvv, 0) == pdPASS)
-//		{
-//			// Clear LCD
-//			ILI9341_Fill_Screen(BLACK);
-//
-//			// Show new value on LCD
-//			char ssss[5] = {0};
-//			sprintf(ssss, "%d", new_rtc_vvvv);
-//			ILI9341_Draw_Text(ssss, 100, 10, YELLOW, 2, BLACK);
-//
-//
-//		}
-
-
-		osStatus_t status = osSemaphoreAcquire(LCD_SemHandle, 10);
-		if(status == 0)
+		if(osSemaphoreAcquire(LCD_SemHandle, 10) == osOK)
 		{
 			// If new time/data is selecting
 			if((xQueueReceive(QUEUE_RTC_VALHandle , &QUEUE_RTC_VAL_t, 0)) == pdTRUE)
 			{
 				ILI9341_Fill_Screen(BLACK);
-
 				char buf[6] = {0};
-
 				// Convert QUEUE_RTC_VAL_t.new_value into strint
-				//itoa(QUEUE_RTC_VAL_t.new_value, buf, 10);
 				sprintf(buf, "%d", QUEUE_RTC_VAL_t.new_value);
-				//QUEUE_RTC_VAL_t.new_value = QUEUE_RTC_VAL_t.new_value + 48;
 				ILI9341_Draw_Text(QUEUE_RTC_VAL_t.name, 10, 100, YELLOW, 2, BLACK);
 				ILI9341_Draw_Text(buf, 200, 100, YELLOW, 2, BLACK);
 

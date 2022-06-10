@@ -36,8 +36,8 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3/portmacro.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/mpu_wrappers.h \
  ../Core/Inc/ILI9341/ILI9341_STM32_Driver.h \
- ../Core/Inc/ILI9341/ILI9341_GFX.h ../Core/Inc/ds3231/ds3231.h \
- ../Core/Inc/bme280/bme280.h \
+ ../Core/Inc/ILI9341/ILI9341_GFX.h ../Core/Inc/ILI9341/snow_tiger.h \
+ ../Core/Inc/ds3231/ds3231.h ../Core/Inc/bme280/bme280.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/task.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/list.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/queue.h
@@ -80,6 +80,7 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
 ../Middlewares/Third_Party/FreeRTOS/Source/include/mpu_wrappers.h:
 ../Core/Inc/ILI9341/ILI9341_STM32_Driver.h:
 ../Core/Inc/ILI9341/ILI9341_GFX.h:
+../Core/Inc/ILI9341/snow_tiger.h:
 ../Core/Inc/ds3231/ds3231.h:
 ../Core/Inc/bme280/bme280.h:
 ../Middlewares/Third_Party/FreeRTOS/Source/include/task.h:
