@@ -40,15 +40,15 @@
 #include <string.h>
 
 /////// For task management
-volatile unsigned long ulHighFreqebcyTimerTicks;		// This variable using for calculate how many time all tasks was running.
-char str_management_memory_str[500] = {0};
-int freemem = 0;
-uint32_t tim_val = 0;
-
-typedef struct 							// Queue for UARD
-{
-	char Buf[612];
-}QUEUE_t;
+//volatile unsigned long ulHighFreqebcyTimerTicks;		// This variable using for calculate how many time all tasks was running.
+//char str_management_memory_str[500] = {0};
+//int freemem = 0;
+//uint32_t tim_val = 0;
+//
+//typedef struct 							// Queue for UARD
+//{
+//	char Buf[612];
+//}QUEUE_t;
 ////////////////////////////
 
 typedef struct
@@ -131,7 +131,7 @@ const osThreadAttr_t defaultTask_attributes = {
 osThreadId_t RTC_DS3231_TaskHandle;
 const osThreadAttr_t RTC_DS3231_Task_attributes = {
   .name = "RTC_DS3231_Task",
-  .stack_size = 300 * 4,
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for BPE280_Task */
@@ -148,13 +148,6 @@ const osThreadAttr_t SET_RTS_TASK_attributes = {
   .stack_size = 400 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for UART_USB_Task */
-osThreadId_t UART_USB_TaskHandle;
-const osThreadAttr_t UART_USB_Task_attributes = {
-  .name = "UART_USB_Task",
-  .stack_size = 500 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
 /* Definitions for LCD_Task */
 osThreadId_t LCD_TaskHandle;
 const osThreadAttr_t LCD_Task_attributes = {
@@ -168,17 +161,6 @@ const osThreadAttr_t NRF24L01_Task_attributes = {
   .name = "NRF24L01_Task",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for UARTQueue */
-osMessageQueueId_t UARTQueueHandle;
-uint8_t UARTQueueBuffer[ 2 * sizeof( QUEUE_t ) ];
-osStaticMessageQDef_t UARTQueueControlBlock;
-const osMessageQueueAttr_t UARTQueue_attributes = {
-  .name = "UARTQueue",
-  .cb_mem = &UARTQueueControlBlock,
-  .cb_size = sizeof(UARTQueueControlBlock),
-  .mq_mem = &UARTQueueBuffer,
-  .mq_size = sizeof(UARTQueueBuffer)
 };
 /* Definitions for buttonQueue */
 osMessageQueueId_t buttonQueueHandle;
@@ -321,7 +303,6 @@ void StartDefaultTask(void *argument);
 void start_RTC_DS3231_Task(void *argument);
 void start_BPE280_Task(void *argument);
 void start_SET_RTS_TASK(void *argument);
-void start_UART_USB_Task(void *argument);
 void start_LCD_Task(void *argument);
 void Start_NRF24L01(void *argument);
 
@@ -402,9 +383,6 @@ int main(void)
   /* USER CODE END RTOS_TIMERS */
 
   /* Create the queue(s) */
-  /* creation of UARTQueue */
-  UARTQueueHandle = osMessageQueueNew (2, sizeof(QUEUE_t), &UARTQueue_attributes);
-
   /* creation of buttonQueue */
   buttonQueueHandle = osMessageQueueNew (2, sizeof(uint16_t), &buttonQueue_attributes);
 
@@ -436,9 +414,6 @@ int main(void)
 
   /* creation of SET_RTS_TASK */
   SET_RTS_TASKHandle = osThreadNew(start_SET_RTS_TASK, NULL, &SET_RTS_TASK_attributes);
-
-  /* creation of UART_USB_Task */
-  UART_USB_TaskHandle = osThreadNew(start_UART_USB_Task, NULL, &UART_USB_Task_attributes);
 
   /* creation of LCD_Task */
   LCD_TaskHandle = osThreadNew(start_LCD_Task, NULL, &LCD_Task_attributes);
@@ -1216,83 +1191,6 @@ void start_SET_RTS_TASK(void *argument)
   /* USER CODE END start_SET_RTS_TASK */
 }
 
-/* USER CODE BEGIN Header_start_UART_USB_Task */
-/**
-* @brief Function implementing the UART_USB_Task thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_start_UART_USB_Task */
-void start_UART_USB_Task(void *argument)
-{
-  /* USER CODE BEGIN start_UART_USB_Task */
-  /* Infinite loop */
-  for(;;)
-  {
-	  char str_end_of_line[3] = {'\r','\n'};
-	  char str_sig = '-';
-	  char buff[10] = {0};
-
-	  QUEUE_t msg;												// Make a queue
-	  memset(msg.Buf, 0, sizeof(msg.Buf));						// Fill in buff '\0'
-	  strcat(msg.Buf, ">>>>> Free heap memory: ");				// Add string to another (Total heap)
-
-	  freemem = xPortGetFreeHeapSize();							// Function return how many free memory.
-	  itoa(freemem, buff, 10);
-	  strcat(msg.Buf, buff);
-	  strcat(msg.Buf, str_end_of_line);
-
-	  // add a hat
-	  strcat(msg.Buf, "| TASK NAME  | STATUS | PRIOR | STACK | NUM |\n\r\0");
-
-	  vTaskList(str_management_memory_str);						// Fill in str_management_memory_str array management task information
-
-	  // Finding the  end of string
-	  uint16_t buffer_size = 0;
-	  while(msg.Buf[buffer_size] != '\0')
-	  {
-		  buffer_size ++;
-	  }
-
-	  // Add str_management_memory_str to queue string
-	  int i = 0;
-	  for(i = 0; str_management_memory_str[i] != '\0'; i++)
-	  {
-		  // add data to queue
-		  msg.Buf[buffer_size + i] = str_management_memory_str[i];
-	  }
-
-	  // add a hat
-	  char str_line[] = {"-----------------------\n\r"};
-	  char str_head_2[] = {"| TASK NAME | ABS TIME | TASK TIME% |\n\r"};
-	  strcat(msg.Buf, str_line);
-	  strcat(msg.Buf, str_head_2);
-
-	  memset(str_management_memory_str, 0, sizeof(str_management_memory_str));	// Clean buffer
-
-	  vTaskGetRunTimeStats(str_management_memory_str);							// Function return how much time all functions running.
-
-	  buffer_size = buffer_size + i + (sizeof(str_line)-1) + (sizeof(str_head_2)-1);
-	  for(i = 0; str_management_memory_str[i] != '\0'; i++)
-	  {
-		  // add data to queue
-		  msg.Buf[buffer_size + i] = str_management_memory_str[i];
-	  }
-	  //strcat(msg.Buf, "#########################################\n\r");
-
-	  buffer_size = 0;
-	  while(msg.Buf[buffer_size] != '\0')
-	  {
-		  buffer_size ++;
-	  }
-	  // Transmit over virtual comport
-	  HAL_UART_Transmit_IT( &huart1, msg.Buf, buffer_size);
-
-	  osDelay(3000);
-  }
-  /* USER CODE END start_UART_USB_Task */
-}
-
 /* USER CODE BEGIN Header_start_LCD_Task */
 /**
 * @brief Function implementing the LCD_Task thread.
@@ -1663,10 +1561,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   /* USER CODE BEGIN Callback 0 */
 
 	// Timer for measure how many time task was running.
-	if(htim->Instance == TIM2)
-	{
-		ulHighFreqebcyTimerTicks++;					// Update time tasks counter
-	}
+//	if(htim->Instance == TIM2)
+//	{
+//		ulHighFreqebcyTimerTicks++;					// Update time tasks counter
+//	}
 
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM4) {
