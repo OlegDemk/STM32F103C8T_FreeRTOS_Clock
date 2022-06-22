@@ -94,6 +94,7 @@ typedef struct
 }QUEUE_RTC_VAL;
 
 
+bool state = true;
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -117,6 +118,7 @@ typedef StaticQueue_t osStaticMessageQDef_t;
 SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
 
@@ -255,55 +257,52 @@ const osSemaphoreAttr_t red_data_fron_rtc_Sem_attributes = {
 // -------------------------------------------------------------------------
 HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	if(GPIO_Pin == INTERUPT_FROM_RTC_Pin)
+	if(GPIO_Pin == INTERUPT_FROM_RTC_Pin)			// Interrupt signal every seconds
 	{
 		osSemaphoreRelease(red_data_fron_rtc_SemHandle);						// Lets RTS task read data from ds3231
 	}
 
-	if((GPIO_Pin == KEY_1_Pin) || (GPIO_Pin == KEY_2_Pin) || (GPIO_Pin == KEY_3_Pin) || (GPIO_Pin == KEY_4_Pin))
+	// Detect pressed key (interrupt)
+	if((GPIO_Pin == KEY_1_Pin) && (state == true))
 	{
-		BaseType_t xHigherPriorityTaskWoken;
-		uint16_t key_1 = 1;
-		uint16_t key_2 = 2;
-		uint16_t key_3 = 3;
-		uint16_t key_4 = 4;
-
-		currentMillis = HAL_GetTick();
-		if((currentMillis - previousMillis) > 100)
-		{
-			if(HAL_GPIO_ReadPin(GPIOA, KEY_1_Pin) == GPIO_PIN_SET)			// If first key was pressed
-			{
-				if((xQueueSendFromISR( buttonQueueHandle, &key_1, &xHigherPriorityTaskWoken )) != 1)		// Send queue to main task
-				{
-					// Error
-				}
-			}
-			else if(HAL_GPIO_ReadPin(GPIOA, KEY_2_Pin) == GPIO_PIN_SET)
-			{
-				if((xQueueSendFromISR( buttonQueueHandle, &key_2, &xHigherPriorityTaskWoken )) != 1)
-				{
-					// Error
-				}
-			}
-			else if(HAL_GPIO_ReadPin(GPIOA, KEY_3_Pin) == GPIO_PIN_SET)
-			{
-				if((xQueueSendFromISR( buttonQueueHandle, &key_3, &xHigherPriorityTaskWoken )) != 1)
-				{
-					// Error
-				}
-			}
-			else if(HAL_GPIO_ReadPin(GPIOA, KEY_4_Pin) == GPIO_PIN_SET)
-			{
-				if((xQueueSendFromISR( buttonQueueHandle, &key_4, &xHigherPriorityTaskWoken )) != 1)
-				{
-					// Error
-				}
-			}
-			previousMillis = currentMillis;
-			// Set semaphore
-			osSemaphoreRelease(set_rts_val_SemHandle);
-		}
+		HAL_TIM_Base_Start_IT(&htim3);
+		state = false;
 	}
+	else
+	{
+		__NOP();
+	}
+
+	if((GPIO_Pin == KEY_2_Pin) && (state == true))
+	{
+		HAL_TIM_Base_Start_IT(&htim3);
+		state = false;
+	}
+	else
+	{
+		__NOP();
+	}
+
+	if((GPIO_Pin == KEY_3_Pin) && (state == true))
+	{
+		HAL_TIM_Base_Start_IT(&htim3);
+		state = false;
+	}
+	else
+	{
+		__NOP();
+	}
+
+	if((GPIO_Pin == KEY_4_Pin) && (state == true))
+	{
+		HAL_TIM_Base_Start_IT(&htim3);
+		state = false;
+	}
+	else
+	{
+		__NOP();
+	}
+
 }
 // -------------------------------------------------------------------------
 
@@ -317,6 +316,7 @@ static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM3_Init(void);
 void StartDefaultTask(void *argument);
 void start_RTC_DS3231_Task(void *argument);
 void start_BPE280_Task(void *argument);
@@ -366,6 +366,7 @@ int main(void)
   MX_I2C1_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 
 
@@ -630,6 +631,51 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 7200;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 500;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -701,8 +747,8 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : KEY_4_Pin KEY_3_Pin KEY_2_Pin KEY_1_Pin */
   GPIO_InitStruct.Pin = KEY_4_Pin|KEY_3_Pin|KEY_2_Pin|KEY_1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LCD_CS_Pin */
@@ -1504,6 +1550,7 @@ void start_LCD_Task(void *argument)
 				}
 				else
 				{
+
 					sprintf(str_hour, "%d", QUEUE_RTC_t.Hour);
 					sprintf(str_minute, "%d", QUEUE_RTC_t.Min);
 					sprintf(str_msecond, "%d", QUEUE_RTC_t.Sec);
@@ -1661,6 +1708,73 @@ void Start_NRF24L01(void *argument)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
+
+	// NEw VERSION
+	if (htim->Instance == TIM3)
+	{
+		BaseType_t xHigherPriorityTaskWoken;
+
+		uint16_t key_1 = 1;
+		uint16_t key_2 = 2;
+		uint16_t key_3 = 3;
+		uint16_t key_4 = 4;
+
+		if(HAL_GPIO_ReadPin(GPIOA, KEY_1_Pin) == GPIO_PIN_RESET)
+		{
+			HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			state = true;
+			HAL_TIM_Base_Stop_IT(&htim3);
+
+			if((xQueueSendFromISR( buttonQueueHandle, &key_1, &xHigherPriorityTaskWoken )) != 1)		// Send queue to main task
+			{
+				// Error
+			}
+			// Set semaphore
+			osSemaphoreRelease(set_rts_val_SemHandle);
+		}
+
+		if(HAL_GPIO_ReadPin(GPIOA, KEY_2_Pin) == GPIO_PIN_RESET)
+		{
+			HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			state = true;
+			HAL_TIM_Base_Stop_IT(&htim3);
+
+			if((xQueueSendFromISR( buttonQueueHandle, &key_2, &xHigherPriorityTaskWoken )) != 1)		// Send queue to main task
+			{
+				// Error
+			}
+			// Set semaphore
+			osSemaphoreRelease(set_rts_val_SemHandle);
+		}
+
+		if(HAL_GPIO_ReadPin(GPIOA, KEY_3_Pin) == GPIO_PIN_RESET)
+		{
+			HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			state = true;
+			HAL_TIM_Base_Stop_IT(&htim3);
+
+			if((xQueueSendFromISR( buttonQueueHandle, &key_3, &xHigherPriorityTaskWoken )) != 1)		// Send queue to main task
+			{
+				// Error
+			}
+			// Set semaphore
+			osSemaphoreRelease(set_rts_val_SemHandle);
+		}
+
+		if(HAL_GPIO_ReadPin(GPIOA, KEY_4_Pin) == GPIO_PIN_RESET)
+		{
+			HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			state = true;
+			HAL_TIM_Base_Stop_IT(&htim3);
+
+			if((xQueueSendFromISR( buttonQueueHandle, &key_4, &xHigherPriorityTaskWoken )) != 1)		// Send queue to main task
+			{
+				// Error
+			}
+			// Set semaphore
+			osSemaphoreRelease(set_rts_val_SemHandle);
+		}
+	}
 
 	// Timer for measure how many time task was running.
 	if(htim->Instance == TIM2)
