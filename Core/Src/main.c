@@ -263,37 +263,8 @@ HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	}
 
 	// Detect pressed key (interrupt)
-	if((GPIO_Pin == KEY_1_Pin) && (state == true))
-	{
-		HAL_TIM_Base_Start_IT(&htim3);
-		state = false;
-	}
-	else
-	{
-		__NOP();
-	}
-
-	if((GPIO_Pin == KEY_2_Pin) && (state == true))
-	{
-		HAL_TIM_Base_Start_IT(&htim3);
-		state = false;
-	}
-	else
-	{
-		__NOP();
-	}
-
-	if((GPIO_Pin == KEY_3_Pin) && (state == true))
-	{
-		HAL_TIM_Base_Start_IT(&htim3);
-		state = false;
-	}
-	else
-	{
-		__NOP();
-	}
-
-	if((GPIO_Pin == KEY_4_Pin) && (state == true))
+	if(((GPIO_Pin == KEY_1_Pin) && (state == true)) || ((GPIO_Pin == KEY_2_Pin) && (state == true))
+			|| ((GPIO_Pin == KEY_3_Pin) && (state == true)) || ((GPIO_Pin == KEY_4_Pin) && (state == true)))
 	{
 		HAL_TIM_Base_Start_IT(&htim3);
 		state = false;
@@ -1550,7 +1521,6 @@ void start_LCD_Task(void *argument)
 				}
 				else
 				{
-
 					sprintf(str_hour, "%d", QUEUE_RTC_t.Hour);
 					sprintf(str_minute, "%d", QUEUE_RTC_t.Min);
 					sprintf(str_msecond, "%d", QUEUE_RTC_t.Sec);
