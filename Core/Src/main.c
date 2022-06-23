@@ -1403,9 +1403,9 @@ void start_LCD_Task(void *argument)
 			{
 				if((print_first_time_on_lcd_flag == true) )				// If print data firsttime
 				{
-//					ILI9341_Fill_Screen(BLACK);
-//
-//					ILI9341_Draw_Hollow_Rectangle_Coord(0, 0, 319, 150, BLUE);
+					ILI9341_Fill_Screen(BLACK);
+
+					ILI9341_Draw_Hollow_Rectangle_Coord(0, 0, 319, 150, BLUE);
 
 					sprintf(str_hour, "%d", QUEUE_RTC_t.Hour);
 					sprintf(str_minute, "%d", QUEUE_RTC_t.Min);
