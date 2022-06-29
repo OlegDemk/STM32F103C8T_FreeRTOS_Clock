@@ -10,9 +10,9 @@
 ../Core/Src/main.c:784:6:StartDefaultTask	16	static
 ../Core/Src/main.c:803:6:start_RTC_DS3231_Task	48	static
 ../Core/Src/main.c:877:6:start_BPE280_Task	104	static
-../Core/Src/main.c:943:6:start_SET_RTS_TASK	72	static
-../Core/Src/main.c:1259:6:start_UART_USB_Task	736	static
-../Core/Src/main.c:1343:6:start_LCD_Task	240	static
-../Core/Src/main.c:1677:6:Start_NRF24L01	24	static
-../Core/Src/main.c:1700:6:HAL_TIM_PeriodElapsedCallback	32	static
-../Core/Src/main.c:1790:6:Error_Handler	4	static,ignoring_inline_asm
+../Core/Src/main.c:943:6:start_SET_RTS_TASK	80	static
+../Core/Src/main.c:1267:6:start_UART_USB_Task	736	static
+../Core/Src/main.c:1351:6:start_LCD_Task	240	static
+../Core/Src/main.c:1685:6:Start_NRF24L01	24	static
+../Core/Src/main.c:1708:6:HAL_TIM_PeriodElapsedCallback	32	static
+../Core/Src/main.c:1798:6:Error_Handler	4	static,ignoring_inline_asm

@@ -958,6 +958,7 @@ void start_SET_RTS_TASK(void *argument)
 			if (xQueueReceive( buttonQueueHandle , &pressed_key, 0 ) == pdTRUE)		// Read witch button was pressed
 			{
 				static int8_t setet_type = 1;
+
 				static int8_t yaer = 1;
 				static int8_t month = 1;
 				static int8_t date = 1;
@@ -1237,8 +1238,15 @@ void start_SET_RTS_TASK(void *argument)
 
 						print_first_time_on_lcd_flag = true;						// Print new time and data on LCD
 
-						setet_type++;												// Exit from switch
+						int8_t yaer = 1;
+						int8_t month = 1;
+						int8_t date = 1;
+						int8_t day_of_week = 1;
+						int8_t hour = 1;
+						int8_t minute = 1;
+						int8_t second = 1;
 
+						setet_type = 1;												// Exit from switch
 
 						break;
 				}
