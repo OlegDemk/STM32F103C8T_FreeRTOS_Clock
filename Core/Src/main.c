@@ -39,16 +39,32 @@
 #include <stdio.h>
 #include <string.h>
 
-/////// For task management
-volatile unsigned long ulHighFreqebcyTimerTicks;		// This variable using for calculate how many time all tasks was running.
-char str_management_memory_str[500] = {0};
-int freemem = 0;
-uint32_t tim_val = 0;
 
-typedef struct 							// Queue for UARD
-{
-	char Buf[612];
-}QUEUE_t;
+// Define for turn On/Off task recourse management
+#define ON 1
+#define OFF 0
+#define RESOURCES ON
+
+/////// For task management
+#if RESOURCES
+	volatile unsigned long ulHighFreqebcyTimerTicks;		// This variable using for calculate how many time all tasks was running.
+	char str_management_memory_str[500] = {0};
+	int freemem = 0;
+	uint32_t tim_val = 0;
+	typedef struct 							// Queue for UARD
+	{
+		char Buf[612];
+	}QUEUE_t;
+#else
+	volatile unsigned long ulHighFreqebcyTimerTicks;		// This variable using for calculate how many time all tasks was running.
+	//char str_management_memory_str[500] = {0};
+	//int freemem = 0;
+	//uint32_t tim_val = 0;
+	typedef struct 							// Queue for UARD
+	{
+		char Buf[1];
+	}QUEUE_t;
+#endif
 ////////////////////////////
 
 typedef struct
@@ -127,53 +143,53 @@ osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityNormal3,
 };
 /* Definitions for RTC_DS3231_Task */
 osThreadId_t RTC_DS3231_TaskHandle;
 const osThreadAttr_t RTC_DS3231_Task_attributes = {
   .name = "RTC_DS3231_Task",
   .stack_size = 300 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityNormal3,
 };
 /* Definitions for BPE280_Task */
 osThreadId_t BPE280_TaskHandle;
 const osThreadAttr_t BPE280_Task_attributes = {
   .name = "BPE280_Task",
   .stack_size = 200 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityNormal1,
 };
 /* Definitions for SET_RTS_TASK */
 osThreadId_t SET_RTS_TASKHandle;
 const osThreadAttr_t SET_RTS_TASK_attributes = {
   .name = "SET_RTS_TASK",
   .stack_size = 400 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityNormal3,
 };
 /* Definitions for UART_USB_Task */
 osThreadId_t UART_USB_TaskHandle;
 const osThreadAttr_t UART_USB_Task_attributes = {
   .name = "UART_USB_Task",
-  .stack_size = 500 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .stack_size = 320 * 4,
+  .priority = (osPriority_t) osPriorityNormal3,
 };
 /* Definitions for LCD_Task */
 osThreadId_t LCD_TaskHandle;
 const osThreadAttr_t LCD_Task_attributes = {
   .name = "LCD_Task",
   .stack_size = 350 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityNormal3,
 };
 /* Definitions for NRF24L01_Task */
 osThreadId_t NRF24L01_TaskHandle;
 const osThreadAttr_t NRF24L01_Task_attributes = {
   .name = "NRF24L01_Task",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityNormal3,
 };
 /* Definitions for UARTQueue */
 osMessageQueueId_t UARTQueueHandle;
-uint8_t UARTQueueBuffer[ 2 * sizeof( QUEUE_t ) ];
+uint8_t UARTQueueBuffer[ 1 * sizeof( QUEUE_t ) ];
 osStaticMessageQDef_t UARTQueueControlBlock;
 const osMessageQueueAttr_t UARTQueue_attributes = {
   .name = "UARTQueue",
@@ -375,7 +391,7 @@ int main(void)
 
   /* Create the queue(s) */
   /* creation of UARTQueue */
-  UARTQueueHandle = osMessageQueueNew (2, sizeof(QUEUE_t), &UARTQueue_attributes);
+  UARTQueueHandle = osMessageQueueNew (1, sizeof(QUEUE_t), &UARTQueue_attributes);
 
   /* creation of buttonQueue */
   buttonQueueHandle = osMessageQueueNew (2, sizeof(uint16_t), &buttonQueue_attributes);
@@ -863,7 +879,7 @@ void start_BPE280_Task(void *argument)
   /* USER CODE BEGIN start_BPE280_Task */
   /* Infinite loop */
 
-	// ДОПИСУВАТИ РОБОТУ З НРФ МОДУЛЕМ В ЦІЙ ТАСЦІ !!!
+	//osDelay(500);
 
 	QUEUE_BME280 QUEUE_BME280_t;
 	BMP280_HandleTypedef bmp280;
@@ -1246,6 +1262,7 @@ void start_UART_USB_Task(void *argument)
   /* Infinite loop */
   for(;;)
   {
+	#if RESOURCES
 	  char str_end_of_line[3] = {'\r','\n'};
 	  char str_sig = '-';
 	  char buff[10] = {0};
@@ -1305,7 +1322,13 @@ void start_UART_USB_Task(void *argument)
 	  // Transmit over virtual comport
 	  HAL_UART_Transmit_IT( &huart1, msg.Buf, buffer_size);
 
-	  osDelay(3000);
+	  osDelay(5000);
+	#else
+	  osDelay(1000);
+	#endif
+
+
+
   }
   /* USER CODE END start_UART_USB_Task */
 }
@@ -1348,7 +1371,7 @@ void start_LCD_Task(void *argument)
 	for(;;)
 	{
 
-		if(osSemaphoreAcquire(LCD_SemHandle, 10) == osOK)
+		if(osSemaphoreAcquire(LCD_SemHandle, 10) == osOK)	// Print RTS time and data settings
 		{
 			// If new time/data is selecting
 			if((xQueueReceive(QUEUE_RTC_VALHandle , &QUEUE_RTC_VAL_t, 0)) == pdTRUE)
@@ -1361,7 +1384,6 @@ void start_LCD_Task(void *argument)
 				ILI9341_Draw_Text(buf, 200, 100, YELLOW, 2, BLACK);
 
 			}
-
 
 			// If data from BME280 is ready print T, H and  P
 			// Waiting queue from start_BPE280_Task
@@ -1457,11 +1479,11 @@ void start_LCD_Task(void *argument)
 					}
 
 					// Draw seconds line
-					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
-					if(QUEUE_RTC_t.Sec == 0)
-					{
-						ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
-					}
+//					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
+//					if(QUEUE_RTC_t.Sec == 0)
+//					{
+//						ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
+//					}
 
 					// Updating blink two points on LCD
 					if(two_point == true)
@@ -1572,11 +1594,11 @@ void start_LCD_Task(void *argument)
 					}
 
 					// Draw seconds line
-					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
-					if(QUEUE_RTC_t.Sec == 0)
-					{
-						ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
-					}
+//					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
+//					if(QUEUE_RTC_t.Sec == 0)
+//					{
+//						ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
+//					}
 
 					// Updating blink two points on LCD
 					if(two_point == true)
