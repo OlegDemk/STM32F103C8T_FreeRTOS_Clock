@@ -1372,13 +1372,13 @@ void start_LCD_Task(void *argument)
 	ILI9341_Draw_Text("HELLO", 80, 10, GREEN, 6, BLACK);
 	osDelay(1000);
 	ILI9341_Draw_Text("Made by Oleg Demkiv", 20, 90, GREEN, 2, BLACK);
-	osDelay(100);
+	osDelay(200);
 	ILI9341_Draw_Text("STM32f103c8t", 0, 130, GREEN, 2, BLACK);
-	osDelay(100);
+	osDelay(200);
 	ILI9341_Draw_Text("FreeRTOS, CMSIS_V2", 0, 150, GREEN, 2, BLACK);
-	osDelay(100);
+	osDelay(200);
 	ILI9341_Draw_Text("7.7.2022",0, 170, GREEN, 2, BLACK);
-	osDelay(100);
+	osDelay(200);
 	ILI9341_Draw_Text("Good luck =) ",0, 190, RED, 3, BLACK);
 	osDelay(5000);
 
@@ -1498,12 +1498,12 @@ void start_LCD_Task(void *argument)
 						ILI9341_Draw_Text(str_msecond, 215, 85, GREEN, 6, BLACK);
 					}
 
-//					// Draw seconds line
-//					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
-//					if(QUEUE_RTC_t.Sec == 0)
-//					{
-//						ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
-//					}
+					// Draw seconds line
+					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
+					if(QUEUE_RTC_t.Sec == 0)
+					{
+						ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
+					}
 
 					// Updating blink two points on LCD
 					if(two_point == true)
@@ -1613,12 +1613,12 @@ void start_LCD_Task(void *argument)
 						ILI9341_Draw_Text(str_msecond, 215, 85, GREEN, 6, BLACK);
 					}
 
-//					// Draw seconds line
-//					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
-//					if(QUEUE_RTC_t.Sec == 0)
-//					{
-//						ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
-//					}
+					// Draw seconds line
+					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
+					if(QUEUE_RTC_t.Sec == 0)
+					{
+						ILI9341_Draw_Rectangle(10, 81, 300, 4, BLACK);
+					}
 
 					// Updating blink two points on LCD
 					if(two_point == true)
@@ -1711,7 +1711,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 		if(HAL_GPIO_ReadPin(GPIOA, KEY_1_Pin) == GPIO_PIN_RESET)
 		{
-			HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			//HAL_GPIO_TogglePin(GPIOC, LED_Pin);
 			state = true;
 			HAL_TIM_Base_Stop_IT(&htim3);
 
@@ -1725,7 +1725,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 		if(HAL_GPIO_ReadPin(GPIOA, KEY_2_Pin) == GPIO_PIN_RESET)
 		{
-			HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			//HAL_GPIO_TogglePin(GPIOC, LED_Pin);
 			state = true;
 			HAL_TIM_Base_Stop_IT(&htim3);
 
@@ -1739,7 +1739,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 		if(HAL_GPIO_ReadPin(GPIOA, KEY_3_Pin) == GPIO_PIN_RESET)
 		{
-			HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			//HAL_GPIO_TogglePin(GPIOC, LED_Pin);
 			state = true;
 			HAL_TIM_Base_Stop_IT(&htim3);
 
@@ -1753,7 +1753,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 		if(HAL_GPIO_ReadPin(GPIOA, KEY_4_Pin) == GPIO_PIN_RESET)
 		{
-			HAL_GPIO_TogglePin(GPIOC, LED_Pin);
+			//HAL_GPIO_TogglePin(GPIOC, LED_Pin);
 			state = true;
 			HAL_TIM_Base_Stop_IT(&htim3);
 
