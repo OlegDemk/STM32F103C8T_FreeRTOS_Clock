@@ -149,7 +149,7 @@ const osThreadAttr_t defaultTask_attributes = {
 osThreadId_t RTC_DS3231_TaskHandle;
 const osThreadAttr_t RTC_DS3231_Task_attributes = {
   .name = "RTC_DS3231_Task",
-  .stack_size = 300 * 4,
+  .stack_size = 380 * 4,
   .priority = (osPriority_t) osPriorityNormal3,
 };
 /* Definitions for BPE280_Task */
@@ -157,13 +157,13 @@ osThreadId_t BPE280_TaskHandle;
 const osThreadAttr_t BPE280_Task_attributes = {
   .name = "BPE280_Task",
   .stack_size = 200 * 4,
-  .priority = (osPriority_t) osPriorityNormal1,
+  .priority = (osPriority_t) osPriorityNormal3,
 };
 /* Definitions for SET_RTS_TASK */
 osThreadId_t SET_RTS_TASKHandle;
 const osThreadAttr_t SET_RTS_TASK_attributes = {
   .name = "SET_RTS_TASK",
-  .stack_size = 400 * 4,
+  .stack_size = 380 * 4,
   .priority = (osPriority_t) osPriorityNormal3,
 };
 /* Definitions for UART_USB_Task */
@@ -177,7 +177,7 @@ const osThreadAttr_t UART_USB_Task_attributes = {
 osThreadId_t LCD_TaskHandle;
 const osThreadAttr_t LCD_Task_attributes = {
   .name = "LCD_Task",
-  .stack_size = 350 * 4,
+  .stack_size = 360 * 4,
   .priority = (osPriority_t) osPriorityNormal3,
 };
 /* Definitions for NRF24L01_Task */
@@ -278,12 +278,12 @@ const osSemaphoreAttr_t red_data_fron_rtc_Sem_attributes = {
 // -------------------------------------------------------------------------
 HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	if(GPIO_Pin == INTERUPT_FROM_RTC_Pin)			// Interrupt signal every seconds
+	if(GPIO_Pin == INTERUPT_FROM_RTC_Pin)										// Interrupt signal every seconds fron RTS module pin
 	{
 		osSemaphoreRelease(red_data_fron_rtc_SemHandle);						// Lets RTS task read data from ds3231
 	}
 
-	// Detect pressed key (interrupt)
+	// Detect pressed key (interrupt)  (debounce method)
 	if(((GPIO_Pin == KEY_1_Pin) && (state == true)) || ((GPIO_Pin == KEY_2_Pin) && (state == true))
 			|| ((GPIO_Pin == KEY_3_Pin) && (state == true)) || ((GPIO_Pin == KEY_4_Pin) && (state == true)))
 	{
@@ -294,10 +294,9 @@ HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	{
 		__NOP();
 	}
-
 }
 // -------------------------------------------------------------------------
-// Create QUEUE
+// Create GLOBAL QUEUEs
 QUEUE_RTC QUEUE_RTC_t;
 QUEUE_BME280 QUEUE_BME280_t;
 QUEUE_NEW_RTC QUEUE_NEW_RTC_t;
@@ -842,11 +841,10 @@ void start_RTC_DS3231_Task(void *argument)
 
 			if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
 			{
-				if(osMutexAcquire (read_data_rts_MutexHandle, 1) == osOK)
+				if(osMutexAcquire (read_data_rts_MutexHandle, 1) == osOK)		// Protest data
 				{
 					DS3231_SetTime(&time);
-
-					DS3231_GetTime(&time);				// Read new saved date and time from RTS module
+					DS3231_GetTime(&time);										// Read new saved date and time from RTS module
 
 					// Fill in structure of queue
 					QUEUE_RTC_t.Year = time.Year;
@@ -857,87 +855,40 @@ void start_RTC_DS3231_Task(void *argument)
 					QUEUE_RTC_t.Min = time.Min;
 					QUEUE_RTC_t.Sec = time.Sec;
 
-
-				/////////////////////////////////////////////////////////////////////////////////////
-//				struct
-//				{
-//					uint8_t Year;
-//					uint8_t Month;
-//					uint8_t Date;
-//					uint8_t DaysOfWeek;
-//					uint8_t Hour;
-//					uint8_t Min;
-//					uint8_t Sec;
-//				} QUEUE_RTC;
-//
-//				struct QUEUE_RTC *struct_rts;
-//
-//				//////////////////////////////////////////
-//				int status = 1;
-//
-//				do{
-//					if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)  // Заходить сюди, але в черзі це старі дані RTC !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-//					{
-//						status = 0;
-//					}
-//					if(xQueuePeek(rtc_queueHandle, &(struct_rts), (( TickType_t ) 10 )) == pdFALSE)
-//					{
-//						status = 0;	// If queue iz empty
-//					}
-//				}while(status == 1);
-//				////////////////////////////////////////////////////////////
-
 					if(xQueueOverwrite( rtc_queueHandle,  &QUEUE_RTC_t ) != pdPASS)					// Send current time over queue
-					{
-						// ERROR
-						//	while(1){}
-						int fff = 999;
-					}
-	//				if(xQueueSend(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)					// Send current time over queue
-	//				{
-	//					// ERROR
-	//				//	while(1){}
-	//				}
-					// Give semaphore
+					// Give back semaphore
 					osSemaphoreRelease(LCD_SemHandle);			// Let print time and date on start_LCD_Task
 					print_first_time_on_lcd_flag = true;		// Set for go print all data on LCD
-
 				}
 				osMutexRelease(read_data_rts_MutexHandle);
 			}
 			osMutexRelease(I2C_MutexHandle);
-
-//			osSemaphoreRelease(red_data_fron_rtc_SemHandle);		// Let read   >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
 		}
-//		else																			// If no new data - show current time
-//		{
-			if (osSemaphoreAcquire(red_data_fron_rtc_SemHandle, 10) == osOK)		// If was interrupt from RTC PIN module
+
+		if (osSemaphoreAcquire(red_data_fron_rtc_SemHandle, 10) == osOK)		// If was interrupt from RTC PIN module then read data from RTS module
+		{
+			if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
 			{
-				if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
-				{
-					DS3231_GetTime(&time);
-				}
-				osMutexRelease(I2C_MutexHandle);
-
-				// Fill in structure of queue
-				QUEUE_RTC_t.Year = time.Year;
-				QUEUE_RTC_t.Month = time.Month;
-				QUEUE_RTC_t.Date = time.Date;
-				QUEUE_RTC_t.DaysOfWeek = time.DaysOfWeek;
-				QUEUE_RTC_t.Hour = time.Hour;
-				QUEUE_RTC_t.Min = time.Min;
-				QUEUE_RTC_t.Sec = time.Sec;
-
-				if(xQueueSend(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)					// Send current time over queue
-				{
-					// ERROR
-				}
-				// Give semaphore
-				osSemaphoreRelease(LCD_SemHandle);		// Let print time and date on start_LCD_Task
+				DS3231_GetTime(&time);
 			}
-//		}
+			osMutexRelease(I2C_MutexHandle);
 
+			// Fill in structure of queue
+			QUEUE_RTC_t.Year = time.Year;
+			QUEUE_RTC_t.Month = time.Month;
+			QUEUE_RTC_t.Date = time.Date;
+			QUEUE_RTC_t.DaysOfWeek = time.DaysOfWeek;
+			QUEUE_RTC_t.Hour = time.Hour;
+			QUEUE_RTC_t.Min = time.Min;
+			QUEUE_RTC_t.Sec = time.Sec;
+
+			if(xQueueSend(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)					// Send current time over queue
+			{
+				// ERROR
+			}
+			// Give semaphore
+			osSemaphoreRelease(LCD_SemHandle);		// Let print time and date on start_LCD_Task
+		}
 	}
   /* USER CODE END start_RTC_DS3231_Task */
 }
@@ -961,7 +912,7 @@ void start_BPE280_Task(void *argument)
 	float pressure, temperature, humidity;
 
 	// Init BME280
-	if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
+	if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)				// Protest I2C
 	{
 		bmp280_init_default_params(&bmp280.params);
 		bmp280.addr = BMP280_I2C_ADDRESS_0;
@@ -976,10 +927,9 @@ void start_BPE280_Task(void *argument)
 	}
 	osMutexRelease(I2C_MutexHandle);
 
-
 	for(;;)
 	{
-		if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
+		if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)						// Protest I2C
 		{
 			if((bmp280_read_float(&bmp280, &temperature, &pressure, &humidity)) != true)
 			{
@@ -1019,11 +969,6 @@ void start_SET_RTS_TASK(void *argument)
 {
   /* USER CODE BEGIN start_SET_RTS_TASK */
   /* Infinite loop */
-
-//	QUEUE_RTC QUEUE_RTC_t;
-	// QUEUE_NEW_RTC QUEUE_NEW_RTC_t;
-	//QUEUE_RTC_VAL QUEUE_RTC_VAL_t;
-
 	for(;;)
 	{
 		uint16_t pressed_key, status_queue = 0;
@@ -1410,7 +1355,6 @@ void start_UART_USB_Task(void *argument)
 	#endif
 
 
-
   }
   /* USER CODE END start_UART_USB_Task */
 }
@@ -1426,9 +1370,6 @@ void start_LCD_Task(void *argument)
 {
   /* USER CODE BEGIN start_LCD_Task */
   /* Infinite loop */
-//	QUEUE_BME280 QUEUE_BME280_t;
-//	QUEUE_RTC QUEUE_RTC_t;
-//	QUEUE_RTC_VAL QUEUE_RTC_VAL_t;
 
 	char str_hour[4] = {0};
 	char str_minute[4] = {0};
@@ -1442,10 +1383,21 @@ void start_LCD_Task(void *argument)
 	ILI9341_Reset();
 	ILI9341_Init();
 	ILI9341_Fill_Screen(BLACK);
-
-	//ILI9341_Draw_Image(snow_tiger, SCREEN_HORIZONTAL_2);
-
+	ILI9341_Draw_Text("HELLO", 80, 10, GREEN, 6, BLACK);
 	osDelay(1000);
+	ILI9341_Draw_Text("Made by Oleg Demkiv", 20, 90, GREEN, 2, BLACK);
+	osDelay(100);
+	ILI9341_Draw_Text("STM32f103c8t", 0, 130, GREEN, 2, BLACK);
+	osDelay(100);
+	ILI9341_Draw_Text("FreeRTOS, CMSIS_V2", 0, 150, GREEN, 2, BLACK);
+	osDelay(100);
+	ILI9341_Draw_Text("7.7.2022",0, 170, GREEN, 2, BLACK);
+	osDelay(100);
+	ILI9341_Draw_Text("Good luck =) ",0, 190, RED, 3, BLACK);
+	osDelay(5000);
+
+	ILI9341_Fill_Screen(BLACK);
+
 
 	// Draw static lines
 	ILI9341_Draw_Hollow_Rectangle_Coord(0, 0, 319, 150, BLUE);
@@ -1500,35 +1452,12 @@ void start_LCD_Task(void *argument)
 			}
 
 
-
 			// If data from start_RTC_DS3231_
 			// Waiting queue from start_RTC_DS3231_Task
-			if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdPASS)  // Заходить сюди, але в черзі це старі дані RTC !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+			if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdPASS)
 			{
 				if(print_first_time_on_lcd_flag == true)				// If print data firsttime
 				{
-
-					//////////////////////////////////////////////////////////////////////////////
-					int g = 999;    // for debug
-					if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdFALSE)
-					{
-						// NO DATA IN THE QUEUE
-						g = 999;
-					}
-					if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdFALSE)
-					{
-						// NO DATA IN THE QUEUE
-						g = 999;
-					}
-					if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdFALSE)
-					{
-						// NO DATA IN THE QUEUE
-						g = 999;
-					}
-					//////////////////////////////////////////////////////////////////////////////
-
-
-					//////////////////////////////////////////////
 					// Print all clock data on LCD
 					ILI9341_Fill_Screen(BLACK);
 
@@ -1583,7 +1512,7 @@ void start_LCD_Task(void *argument)
 						ILI9341_Draw_Text(str_msecond, 215, 85, GREEN, 6, BLACK);
 					}
 
-					// Draw seconds line
+//					// Draw seconds line
 //					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
 //					if(QUEUE_RTC_t.Sec == 0)
 //					{
@@ -1698,7 +1627,7 @@ void start_LCD_Task(void *argument)
 						ILI9341_Draw_Text(str_msecond, 215, 85, GREEN, 6, BLACK);
 					}
 
-					// Draw seconds line
+//					// Draw seconds line
 //					ILI9341_Draw_Rectangle(10, 81, (5*QUEUE_RTC_t.Sec), 4, GREEN);
 //					if(QUEUE_RTC_t.Sec == 0)
 //					{
