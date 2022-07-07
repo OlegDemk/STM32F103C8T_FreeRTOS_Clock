@@ -216,7 +216,7 @@ const osMessageQueueAttr_t THPQueue_attributes = {
 };
 /* Definitions for rtc_queue */
 osMessageQueueId_t rtc_queueHandle;
-uint8_t rtc_queueBuffer[ 2 * sizeof( QUEUE_RTC ) ];
+uint8_t rtc_queueBuffer[ 1 * sizeof( QUEUE_RTC ) ];
 osStaticMessageQDef_t rtc_queueControlBlock;
 const osMessageQueueAttr_t rtc_queue_attributes = {
   .name = "rtc_queue",
@@ -251,6 +251,11 @@ const osMessageQueueAttr_t QUEUE_RTC_VAL_attributes = {
 osMutexId_t I2C_MutexHandle;
 const osMutexAttr_t I2C_Mutex_attributes = {
   .name = "I2C_Mutex"
+};
+/* Definitions for read_data_rts_Mutex */
+osMutexId_t read_data_rts_MutexHandle;
+const osMutexAttr_t read_data_rts_Mutex_attributes = {
+  .name = "read_data_rts_Mutex"
 };
 /* Definitions for LCD_Sem */
 osSemaphoreId_t LCD_SemHandle;
@@ -292,7 +297,11 @@ HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
 }
 // -------------------------------------------------------------------------
-
+// Create QUEUE
+QUEUE_RTC QUEUE_RTC_t;
+QUEUE_BME280 QUEUE_BME280_t;
+QUEUE_NEW_RTC QUEUE_NEW_RTC_t;
+QUEUE_RTC_VAL QUEUE_RTC_VAL_t;
 
 /* USER CODE END PV */
 
@@ -367,6 +376,9 @@ int main(void)
   /* creation of I2C_Mutex */
   I2C_MutexHandle = osMutexNew(&I2C_Mutex_attributes);
 
+  /* creation of read_data_rts_Mutex */
+  read_data_rts_MutexHandle = osMutexNew(&read_data_rts_Mutex_attributes);
+
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
@@ -400,7 +412,7 @@ int main(void)
   THPQueueHandle = osMessageQueueNew (2, sizeof(QUEUE_BME280), &THPQueue_attributes);
 
   /* creation of rtc_queue */
-  rtc_queueHandle = osMessageQueueNew (2, sizeof(QUEUE_RTC), &rtc_queue_attributes);
+  rtc_queueHandle = osMessageQueueNew (1, sizeof(QUEUE_RTC), &rtc_queue_attributes);
 
   /* creation of new_rtc_queue */
   new_rtc_queueHandle = osMessageQueueNew (2, sizeof(QUEUE_NEW_RTC), &new_rtc_queue_attributes);
@@ -804,9 +816,9 @@ void start_RTC_DS3231_Task(void *argument)
 {
   /* USER CODE BEGIN start_RTC_DS3231_Task */
   /* Infinite loop */
-	QUEUE_RTC QUEUE_RTC_t;
-	QUEUE_NEW_RTC QUEUE_NEW_RTC_t;
-	_RTC time; 							// rtc_queueHandle
+//	QUEUE_RTC QUEUE_RTC_t;
+//	QUEUE_NEW_RTC QUEUE_NEW_RTC_t;
+	_RTC time;
 
 	// Init DS3231 RTC module
 	// Turn on interrupt PIN on RTC module every one second
@@ -830,13 +842,76 @@ void start_RTC_DS3231_Task(void *argument)
 
 			if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
 			{
-				DS3231_SetTime(&time);
+				if(osMutexAcquire (read_data_rts_MutexHandle, 1) == osOK)
+				{
+					DS3231_SetTime(&time);
+
+					DS3231_GetTime(&time);				// Read new saved date and time from RTS module
+
+					// Fill in structure of queue
+					QUEUE_RTC_t.Year = time.Year;
+					QUEUE_RTC_t.Month = time.Month;
+					QUEUE_RTC_t.Date = time.Date;
+					QUEUE_RTC_t.DaysOfWeek = time.DaysOfWeek;
+					QUEUE_RTC_t.Hour = time.Hour;
+					QUEUE_RTC_t.Min = time.Min;
+					QUEUE_RTC_t.Sec = time.Sec;
+
+
+				/////////////////////////////////////////////////////////////////////////////////////
+//				struct
+//				{
+//					uint8_t Year;
+//					uint8_t Month;
+//					uint8_t Date;
+//					uint8_t DaysOfWeek;
+//					uint8_t Hour;
+//					uint8_t Min;
+//					uint8_t Sec;
+//				} QUEUE_RTC;
+//
+//				struct QUEUE_RTC *struct_rts;
+//
+//				//////////////////////////////////////////
+//				int status = 1;
+//
+//				do{
+//					if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)  // Заходить сюди, але в черзі це старі дані RTC !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//					{
+//						status = 0;
+//					}
+//					if(xQueuePeek(rtc_queueHandle, &(struct_rts), (( TickType_t ) 10 )) == pdFALSE)
+//					{
+//						status = 0;	// If queue iz empty
+//					}
+//				}while(status == 1);
+//				////////////////////////////////////////////////////////////
+
+					if(xQueueOverwrite( rtc_queueHandle,  &QUEUE_RTC_t ) != pdPASS)					// Send current time over queue
+					{
+						// ERROR
+						//	while(1){}
+						int fff = 999;
+					}
+	//				if(xQueueSend(rtc_queueHandle, &QUEUE_RTC_t, 0) != pdPASS)					// Send current time over queue
+	//				{
+	//					// ERROR
+	//				//	while(1){}
+	//				}
+					// Give semaphore
+					osSemaphoreRelease(LCD_SemHandle);			// Let print time and date on start_LCD_Task
+					print_first_time_on_lcd_flag = true;		// Set for go print all data on LCD
+
+				}
+				osMutexRelease(read_data_rts_MutexHandle);
 			}
 			osMutexRelease(I2C_MutexHandle);
 
+//			osSemaphoreRelease(red_data_fron_rtc_SemHandle);		// Let read   >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
 		}
-		else																			// If no new data - show current time
-		{
+//		else																			// If no new data - show current time
+//		{
 			if (osSemaphoreAcquire(red_data_fron_rtc_SemHandle, 10) == osOK)		// If was interrupt from RTC PIN module
 			{
 				if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
@@ -861,7 +936,7 @@ void start_RTC_DS3231_Task(void *argument)
 				// Give semaphore
 				osSemaphoreRelease(LCD_SemHandle);		// Let print time and date on start_LCD_Task
 			}
-		}
+//		}
 
 	}
   /* USER CODE END start_RTC_DS3231_Task */
@@ -881,7 +956,7 @@ void start_BPE280_Task(void *argument)
 
 	//osDelay(500);
 
-	QUEUE_BME280 QUEUE_BME280_t;
+	//QUEUE_BME280 QUEUE_BME280_t;
 	BMP280_HandleTypedef bmp280;
 	float pressure, temperature, humidity;
 
@@ -945,9 +1020,9 @@ void start_SET_RTS_TASK(void *argument)
   /* USER CODE BEGIN start_SET_RTS_TASK */
   /* Infinite loop */
 
-	QUEUE_RTC QUEUE_RTC_t;
-	QUEUE_NEW_RTC QUEUE_NEW_RTC_t;
-	QUEUE_RTC_VAL QUEUE_RTC_VAL_t;
+//	QUEUE_RTC QUEUE_RTC_t;
+	// QUEUE_NEW_RTC QUEUE_NEW_RTC_t;
+	//QUEUE_RTC_VAL QUEUE_RTC_VAL_t;
 
 	for(;;)
 	{
@@ -1230,7 +1305,6 @@ void start_SET_RTS_TASK(void *argument)
 						break;
 
 					case 8:
-						//ILI9341_Fill_Screen(BLACK);								// Claan LCD
 						xQueueSend(new_rtc_queueHandle, &QUEUE_NEW_RTC_t, 0);		// Send new time and data to rtc task
 
 						osThreadResume(RTC_DS3231_TaskHandle);					// Start RTS task
@@ -1238,13 +1312,13 @@ void start_SET_RTS_TASK(void *argument)
 
 						print_first_time_on_lcd_flag = true;						// Print new time and data on LCD
 
-						int8_t yaer = 1;
-						int8_t month = 1;
-						int8_t date = 1;
-						int8_t day_of_week = 1;
-						int8_t hour = 1;
-						int8_t minute = 1;
-						int8_t second = 1;
+						yaer = 1;
+						month = 1;
+						date = 1;
+						day_of_week = 1;
+						hour = 1;
+						minute = 1;
+						second = 1;
 
 						setet_type = 1;												// Exit from switch
 
@@ -1352,9 +1426,9 @@ void start_LCD_Task(void *argument)
 {
   /* USER CODE BEGIN start_LCD_Task */
   /* Infinite loop */
-	QUEUE_BME280 QUEUE_BME280_t;
-	QUEUE_RTC QUEUE_RTC_t;
-	QUEUE_RTC_VAL QUEUE_RTC_VAL_t;
+//	QUEUE_BME280 QUEUE_BME280_t;
+//	QUEUE_RTC QUEUE_RTC_t;
+//	QUEUE_RTC_VAL QUEUE_RTC_VAL_t;
 
 	char str_hour[4] = {0};
 	char str_minute[4] = {0};
@@ -1379,7 +1453,7 @@ void start_LCD_Task(void *argument)
 	for(;;)
 	{
 
-		if(osSemaphoreAcquire(LCD_SemHandle, 10) == osOK)	// Print RTS time and data settings
+		if(osSemaphoreAcquire(LCD_SemHandle, 100) == osOK)	// Print RTS time and data settings
 		{
 			// If new time/data is selecting
 			if((xQueueReceive(QUEUE_RTC_VALHandle , &QUEUE_RTC_VAL_t, 0)) == pdTRUE)
@@ -1429,10 +1503,33 @@ void start_LCD_Task(void *argument)
 
 			// If data from start_RTC_DS3231_
 			// Waiting queue from start_RTC_DS3231_Task
-			if((xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdPASS))
+			if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdPASS)  // Заходить сюди, але в черзі це старі дані RTC !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 			{
-				if((print_first_time_on_lcd_flag == true) )				// If print data firsttime
+				if(print_first_time_on_lcd_flag == true)				// If print data firsttime
 				{
+
+					//////////////////////////////////////////////////////////////////////////////
+					int g = 999;    // for debug
+					if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdFALSE)
+					{
+						// NO DATA IN THE QUEUE
+						g = 999;
+					}
+					if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdFALSE)
+					{
+						// NO DATA IN THE QUEUE
+						g = 999;
+					}
+					if(xQueueReceive(rtc_queueHandle, &QUEUE_RTC_t, 0) == pdFALSE)
+					{
+						// NO DATA IN THE QUEUE
+						g = 999;
+					}
+					//////////////////////////////////////////////////////////////////////////////
+
+
+					//////////////////////////////////////////////
+					// Print all clock data on LCD
 					ILI9341_Fill_Screen(BLACK);
 
 					ILI9341_Draw_Hollow_Rectangle_Coord(0, 0, 319, 150, BLUE);
