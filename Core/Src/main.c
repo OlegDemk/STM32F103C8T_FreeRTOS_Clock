@@ -38,7 +38,7 @@
 // Define for turn On/Off task recourse management
 #define ON 1
 #define OFF 0
-#define RESOURCES ON
+#define RESOURCES OFF
 
 /////// For task management
 #if RESOURCES
@@ -827,8 +827,8 @@ void start_RTC_DS3231_Task(void *argument)
 
 			if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
 			{
-//				if(osMutexAcquire (read_data_rts_MutexHandle, 1) == osOK)		// Protest data
-//				{
+				if(osMutexAcquire (read_data_rts_MutexHandle, 1) == osOK)		// Protest data
+				{
 					DS3231_SetTime(&time);
 					DS3231_GetTime(&time);										// Read new saved date and time from RTS module
 
@@ -845,8 +845,8 @@ void start_RTC_DS3231_Task(void *argument)
 					// Give back semaphore
 					osSemaphoreRelease(LCD_SemHandle);			// Let print time and date on start_LCD_Task
 					print_first_time_on_lcd_flag = true;		// Set for go print all data on LCD
-//				}
-//				osMutexRelease(read_data_rts_MutexHandle);
+				}
+				osMutexRelease(read_data_rts_MutexHandle);
 			}
 			osMutexRelease(I2C_MutexHandle);
 		}
