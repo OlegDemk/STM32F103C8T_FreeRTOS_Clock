@@ -206,7 +206,7 @@ ILI9341_Reset();
 
 //SOFTWARE RESET
 ILI9341_Write_Command(0x01);
-HAL_Delay(1000);
+HAL_Delay(100);
 	
 //POWER CONTROL A
 ILI9341_Write_Command(0xCB);

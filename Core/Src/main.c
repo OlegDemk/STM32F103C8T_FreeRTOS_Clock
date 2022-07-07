@@ -25,17 +25,12 @@
 #include "ILI9341/ILI9341_STM32_Driver.h"
 #include "ILI9341/ILI9341_GFX.h"
 #include "ILI9341/snow_tiger.h"
-
 #include "ds3231/ds3231.h"
-
 #include "bme280/bme280.h"
-
 #include "task.h"
 
 #include "stdlib.h"
 #include "queue.h"
-
-
 #include <stdio.h>
 #include <string.h>
 
@@ -90,6 +85,7 @@ typedef struct
   uint8_t Sec;
 } QUEUE_RTC;
 
+// For new date and time for RTC
 typedef struct
 {
   uint8_t Year;
@@ -103,14 +99,15 @@ typedef struct
 
 bool print_first_time_on_lcd_flag = true;
 
+// for set and print new value date and time
 typedef struct
 {
 	int new_value;
 	char name[20];
 }QUEUE_RTC_VAL;
 
+bool state = true;				// Trigger state for keyboard
 
-bool state = true;
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -157,7 +154,7 @@ osThreadId_t BPE280_TaskHandle;
 const osThreadAttr_t BPE280_Task_attributes = {
   .name = "BPE280_Task",
   .stack_size = 200 * 4,
-  .priority = (osPriority_t) osPriorityNormal3,
+  .priority = (osPriority_t) osPriorityNormal4,
 };
 /* Definitions for SET_RTS_TASK */
 osThreadId_t SET_RTS_TASKHandle;
@@ -178,13 +175,6 @@ osThreadId_t LCD_TaskHandle;
 const osThreadAttr_t LCD_Task_attributes = {
   .name = "LCD_Task",
   .stack_size = 360 * 4,
-  .priority = (osPriority_t) osPriorityNormal3,
-};
-/* Definitions for NRF24L01_Task */
-osThreadId_t NRF24L01_TaskHandle;
-const osThreadAttr_t NRF24L01_Task_attributes = {
-  .name = "NRF24L01_Task",
-  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal3,
 };
 /* Definitions for UARTQueue */
@@ -318,7 +308,6 @@ void start_BPE280_Task(void *argument);
 void start_SET_RTS_TASK(void *argument);
 void start_UART_USB_Task(void *argument);
 void start_LCD_Task(void *argument);
-void Start_NRF24L01(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -441,9 +430,6 @@ int main(void)
 
   /* creation of LCD_Task */
   LCD_TaskHandle = osThreadNew(start_LCD_Task, NULL, &LCD_Task_attributes);
-
-  /* creation of NRF24L01_Task */
-  NRF24L01_TaskHandle = osThreadNew(Start_NRF24L01, NULL, &NRF24L01_Task_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
 
@@ -841,8 +827,8 @@ void start_RTC_DS3231_Task(void *argument)
 
 			if(osMutexAcquire (I2C_MutexHandle, 1) == osOK)
 			{
-				if(osMutexAcquire (read_data_rts_MutexHandle, 1) == osOK)		// Protest data
-				{
+//				if(osMutexAcquire (read_data_rts_MutexHandle, 1) == osOK)		// Protest data
+//				{
 					DS3231_SetTime(&time);
 					DS3231_GetTime(&time);										// Read new saved date and time from RTS module
 
@@ -859,8 +845,8 @@ void start_RTC_DS3231_Task(void *argument)
 					// Give back semaphore
 					osSemaphoreRelease(LCD_SemHandle);			// Let print time and date on start_LCD_Task
 					print_first_time_on_lcd_flag = true;		// Set for go print all data on LCD
-				}
-				osMutexRelease(read_data_rts_MutexHandle);
+//				}
+//				osMutexRelease(read_data_rts_MutexHandle);
 			}
 			osMutexRelease(I2C_MutexHandle);
 		}
@@ -1380,7 +1366,7 @@ void start_LCD_Task(void *argument)
 
 	bool two_point = true;
 
-	ILI9341_Reset();
+	//ILI9341_Reset();
 	ILI9341_Init();
 	ILI9341_Fill_Screen(BLACK);
 	ILI9341_Draw_Text("HELLO", 80, 10, GREEN, 6, BLACK);
@@ -1699,28 +1685,6 @@ void start_LCD_Task(void *argument)
 
 	}
   /* USER CODE END start_LCD_Task */
-}
-
-/* USER CODE BEGIN Header_Start_NRF24L01 */
-/**
-* @brief Function implementing the NRF24L01_Task thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_Start_NRF24L01 */
-void Start_NRF24L01(void *argument)
-{
-  /* USER CODE BEGIN Start_NRF24L01 */
-  /* Infinite loop */
-	int ggg = 0;
-
-  for(;;)
-  {
-
-	  ggg ++;
-    osDelay(100);
-  }
-  /* USER CODE END Start_NRF24L01 */
 }
 
 /**
